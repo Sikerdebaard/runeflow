@@ -5,14 +5,16 @@
 """InferenceService — autoregressive 9-day price forecast with 51-member
 weather ensemble for uncertainty quantification.
 """
+
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import pickle
+from datetime import UTC
 from datetime import datetime as dt_cls
-from datetime import timezone
 
 import inject
 import joblib
@@ -22,7 +24,7 @@ from sklearn.impute import SimpleImputer
 
 from runeflow.domain.forecast import ForecastPoint, ForecastResult
 from runeflow.ensemble.condition_gated import ConditionGatedStrategy
-from runeflow.features import build_pipeline, INFERENCE_WARMUP_DAYS
+from runeflow.features import INFERENCE_WARMUP_DAYS, build_pipeline
 from runeflow.models.extreme_high import ExtremeHighModel
 from runeflow.models.extreme_low import ExtremeLowModel
 from runeflow.models.xgboost_quantile import XGBoostQuantileModel
@@ -66,8 +68,15 @@ def _run_forecast_worker(
     # Environment variables must be set before any library uses them;
     # loky workers start fresh so these take effect immediately.
     import os as _os
-    for _var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
-                 "BLIS_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+
+    for _var in (
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "BLIS_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+    ):
         _os.environ[_var] = "1"
 
     # Also tell XGBoost directly via set_params so it respects the limit
@@ -80,10 +89,8 @@ def _run_forecast_worker(
         getattr(ext_low, "_model", None),
     ):
         if _m is not None:
-            try:
+            with contextlib.suppress(Exception):
                 _m.set_params(nthread=1)
-            except Exception:
-                pass
     # ───────────────────────────────────────────────────────────────────────
 
     pipeline = build_pipeline(zone_cfg)
@@ -91,10 +98,10 @@ def _run_forecast_worker(
 
     warmup_window = warmup.copy()
     weather_df_tz = weather_df.copy()
-    if weather_df_tz.index.tz is None:
-        weather_df_tz.index = weather_df_tz.index.tz_localize("UTC")
+    if weather_df_tz.index.tz is None:  # type: ignore[attr-defined]
+        weather_df_tz.index = weather_df_tz.index.tz_localize("UTC")  # type: ignore[attr-defined]
     else:
-        weather_df_tz.index = weather_df_tz.index.tz_convert("UTC")
+        weather_df_tz.index = weather_df_tz.index.tz_convert("UTC")  # type: ignore[attr-defined]
 
     results: dict[pd.Timestamp, dict] = {}
     n_total = len(timestamps)
@@ -116,7 +123,7 @@ def _run_forecast_worker(
 
         # Select current row
         df_features = df_features.sort_index()
-        if ts in df_features.index:
+        if ts in df_features.index:  # noqa: SIM108
             X_row = df_features.loc[[ts]]
         else:
             X_row = df_features.tail(1)
@@ -127,9 +134,7 @@ def _run_forecast_worker(
         if features:
             missing = {f: np.nan for f in features if f not in X_row.columns}
             if missing:
-                X_row = pd.concat(
-                    [X_row, pd.DataFrame(missing, index=X_row.index)], axis=1
-                )
+                X_row = pd.concat([X_row, pd.DataFrame(missing, index=X_row.index)], axis=1)
             X_row = X_row[features]
 
         # Impute
@@ -163,11 +168,13 @@ def _run_forecast_worker(
 
         _ext_high = (
             float(preds_map["extreme_high"]["prediction"].iloc[0])
-            if "extreme_high" in preds_map else None
+            if "extreme_high" in preds_map
+            else None
         )
         _ext_low = (
             float(preds_map["extreme_low"]["prediction"].iloc[0])
-            if "extreme_low" in preds_map else None
+            if "extreme_low" in preds_map
+            else None
         )
 
         result = {
@@ -188,7 +195,10 @@ def _run_forecast_worker(
         if (h + 1) % 24 == 0 or (h + 1) == n_total:
             logger.info(
                 "[%s] %d/%d hours complete (day %d, latest p50=%.1f)",
-                label, h + 1, n_total, (h + 1) // 24 or 1,
+                label,
+                h + 1,
+                n_total,
+                (h + 1) // 24 or 1,
                 result["prediction"],
             )
 
@@ -214,9 +224,9 @@ class InferenceService:
     @inject.autoparams()
     def __init__(
         self,
-        zone_cfg: ZoneConfig = inject.attr("zone_config"),
-        store: DataStore = inject.attr(DataStore),
-        weather_port: WeatherPort = inject.attr(WeatherPort),
+        zone_cfg: ZoneConfig = inject.attr("zone_config"),  # type: ignore[assignment]  # noqa: B008
+        store: DataStore = inject.attr(DataStore),  # type: ignore[assignment]  # noqa: B008
+        weather_port: WeatherPort = inject.attr(WeatherPort),  # type: ignore[assignment]  # noqa: B008, E501
     ) -> None:
         self._zone_cfg = zone_cfg
         self._store = store
@@ -225,7 +235,7 @@ class InferenceService:
         try:
             self._supplemental_port: SupplementalDataPort | None = inject.instance(
                 SupplementalDataPort
-            )
+            )  # type: ignore[assignment]
         except Exception:
             self._supplemental_port = None
 
@@ -252,7 +262,11 @@ class InferenceService:
         logger.info("Fetching forecast weather for zone=%s...", zone)
         locations = list(self._zone_cfg.weather_locations)
         det_weather = self._weather_port.download_forecast(locations, horizon_days=9)
-        logger.info("Deterministic weather: %d rows, columns=%s", len(det_weather.df), list(det_weather.df.columns)[:4])
+        logger.info(
+            "Deterministic weather: %d rows, columns=%s",
+            len(det_weather.df),
+            list(det_weather.df.columns)[:4],
+        )
 
         # Join supplemental forecast (NED consumption forecast for NL) so
         # that residual-load features are computed from the forecast rather
@@ -262,17 +276,19 @@ class InferenceService:
             det_weather_df = det_weather.df.copy()
             det_weather_df = det_weather_df.join(ned_forecast, how="left")
             from runeflow.domain.weather import WeatherSeries
+
             det_weather = WeatherSeries(
                 df=det_weather_df,
                 source=det_weather.source,
                 locations=det_weather.locations,
                 fetched_at=det_weather.fetched_at,
             )
-            logger.info("Joined supplemental forecast (%d rows) into deterministic weather", len(ned_forecast))
-        try:
-            ens_members = self._weather_port.download_ensemble_forecast(
-                locations, horizon_days=9
+            logger.info(
+                "Joined supplemental forecast (%d rows) into deterministic weather",
+                len(ned_forecast),
             )
+        try:
+            ens_members = self._weather_port.download_ensemble_forecast(locations, horizon_days=9)
             logger.info("Ensemble weather: %d members", len(ens_members))
         except Exception as exc:
             logger.warning("Ensemble weather forecast unavailable: %s", exc)
@@ -286,11 +302,21 @@ class InferenceService:
         # Deterministic run (sequential — needed before ensemble aggregation)
         logger.info(
             "Running deterministic forecast (%d hours, %s → %s)",
-            len(timestamps), timestamps[0].strftime("%Y-%m-%d %H:%M"), timestamps[-1].strftime("%Y-%m-%d %H:%M"),
+            len(timestamps),
+            timestamps[0].strftime("%Y-%m-%d %H:%M"),
+            timestamps[-1].strftime("%Y-%m-%d %H:%M"),
         )
         det_results = _run_forecast_worker(
-            det_weather.df, warmup, timestamps, xgb, ext_high, ext_low,
-            imputer, features, self._zone_cfg, label="deterministic"
+            det_weather.df,
+            warmup,
+            timestamps,
+            xgb,
+            ext_high,
+            ext_low,
+            imputer,
+            features,
+            self._zone_cfg,
+            label="deterministic",
         )
         logger.info("Deterministic forecast done (%d points)", len(det_results))
 
@@ -303,19 +329,29 @@ class InferenceService:
             n_workers = min(os.cpu_count() or 1, n_total)
             logger.info(
                 "Running %d ensemble members in parallel (workers=%d, backend=loky)",
-                n_total, n_workers,
+                n_total,
+                n_workers,
             )
             raw_results = joblib.Parallel(n_jobs=n_workers, backend="loky", verbose=5)(
                 joblib.delayed(_run_forecast_worker)(
-                    member.df, warmup, timestamps, xgb, ext_high, ext_low,
-                    imputer, features, self._zone_cfg, f"member_{i:02d}",
+                    member.df,
+                    warmup,
+                    timestamps,
+                    xgb,
+                    ext_high,
+                    ext_low,
+                    imputer,
+                    features,
+                    self._zone_cfg,
+                    f"member_{i:02d}",
                 )
                 for i, member in enumerate(members_to_run)
             )
             member_results = [r for r in raw_results if r is not None]
             logger.info(
                 "Ensemble runs complete: %d/%d succeeded",
-                len(member_results), n_total,
+                len(member_results),
+                n_total,
             )
 
         return self._build_result(zone, timestamps, det_results, member_results)
@@ -333,10 +369,10 @@ class InferenceService:
                     if "ned_forecast_kwh" in df.columns:
                         df = df.rename(columns={"ned_forecast_kwh": "ned_utilization_kwh"})
                     # Ensure UTC tz-aware index
-                    if df.index.tz is None:
-                        df.index = df.index.tz_localize("UTC")
+                    if df.index.tz is None:  # type: ignore[attr-defined]
+                        df.index = df.index.tz_localize("UTC")  # type: ignore[attr-defined]
                     else:
-                        df.index = df.index.tz_convert("UTC")
+                        df.index = df.index.tz_convert("UTC")  # type: ignore[attr-defined]
                     logger.info("Supplemental forecast downloaded: %d rows", len(df))
                     return df
             except Exception as exc:
@@ -384,7 +420,9 @@ class InferenceService:
 
         logger.info("  loading imputer + feature list...")
         raw_imputer = self._store.load_model(zone, "imputer")
-        imputer: SimpleImputer = pickle.loads(raw_imputer) if raw_imputer else SimpleImputer(strategy="mean")
+        imputer: SimpleImputer = (
+            pickle.loads(raw_imputer) if raw_imputer else SimpleImputer(strategy="mean")
+        )
 
         raw_features = self._store.load_model(zone, "features")
         features: list[str] = json.loads(raw_features.decode()) if raw_features else []
@@ -404,7 +442,7 @@ class InferenceService:
 
         # Build ensemble DataFrame (one column per member)
         member_cols: dict[str, list[float]] = {}
-        for i, m in enumerate(member_results):
+        for i, _m in enumerate(member_results):
             col_key = f"member_{i:02d}"
             member_cols[col_key] = []
 
@@ -414,50 +452,50 @@ class InferenceService:
             det = det_results[ts]
 
             # Collect member predictions for this timestamp
-            member_preds = [
-                m[ts]["prediction"]
-                for m in member_results
-                if ts in m
-            ]
+            member_preds = [m[ts]["prediction"] for m in member_results if ts in m]
 
             if member_preds:
                 arr = np.array(member_preds)
                 ens_lower = float(np.percentile(arr, 2.5))
                 ens_upper = float(np.percentile(arr, 97.5))
-                ens_p25   = float(np.percentile(arr, 25))
-                ens_p50   = float(np.percentile(arr, 50))
-                ens_p75   = float(np.percentile(arr, 75))
-                ens_std   = float(np.std(arr))
+                ens_p25 = float(np.percentile(arr, 25))
+                ens_p50 = float(np.percentile(arr, 50))
+                ens_p75 = float(np.percentile(arr, 75))
+                ens_std = float(np.std(arr))
                 ens_agree = float(np.clip(1 - ens_std / (abs(det["prediction"]) + 1), 0, 1))
             else:
                 ens_lower = det["lower"]
                 ens_upper = det["upper"]
-                ens_p25   = det["lower"]
-                ens_p50   = det["prediction"]
-                ens_p75   = det["upper"]
+                ens_p25 = det["lower"]
+                ens_p50 = det["prediction"]
+                ens_p75 = det["upper"]
                 ens_agree = det["model_agreement"]
 
-            points.append(ForecastPoint(
-                timestamp=ts,
-                prediction=det["prediction"],
-                lower=ens_lower,
-                upper=ens_upper,
-                uncertainty=ens_upper - ens_lower,
-                model_agreement=ens_agree,
-                lower_static=det["lower"],
-                upper_static=det["upper"],
-                ensemble_p50=ens_p50,
-                ensemble_p25=ens_p25,
-                ensemble_p75=ens_p75,
-            ))
+            points.append(
+                ForecastPoint(
+                    timestamp=ts,
+                    prediction=det["prediction"],
+                    lower=ens_lower,
+                    upper=ens_upper,
+                    uncertainty=ens_upper - ens_lower,
+                    model_agreement=ens_agree,
+                    lower_static=det["lower"],
+                    upper_static=det["upper"],
+                    ensemble_p50=ens_p50,
+                    ensemble_p25=ens_p25,
+                    ensemble_p75=ens_p75,
+                )
+            )
 
             for i, m in enumerate(member_results):
                 col_key = f"member_{i:02d}"
-                if col_key not in member_cols:  # pragma: no cover — defensive; pre-initialised above
-                    member_cols[col_key] = [None] * len(ts_list)
+                if (
+                    col_key not in member_cols
+                ):  # pragma: no cover — defensive; pre-initialised above
+                    member_cols[col_key] = [None] * len(ts_list)  # type: ignore[list-item]
                 idx = ts_list.index(ts)
                 if len(member_cols[col_key]) <= idx:
-                    member_cols[col_key].extend([None] * (idx - len(member_cols[col_key]) + 1))
+                    member_cols[col_key].extend([None] * (idx - len(member_cols[col_key]) + 1))  # type: ignore[list-item]
                 member_cols[col_key][idx] = m.get(ts, {}).get("prediction", np.nan)
 
         if ts_list and member_cols:
@@ -467,8 +505,11 @@ class InferenceService:
 
         # Individual model series for the plot
         _model_keys = [
-            "xgboost_p50", "xgboost_p10", "xgboost_p90",
-            "extreme_high", "extreme_low",
+            "xgboost_p50",
+            "xgboost_p10",
+            "xgboost_p90",
+            "extreme_high",
+            "extreme_low",
         ]
         model_preds: dict[str, pd.Series] = {}
         for mkey in _model_keys:
@@ -484,6 +525,6 @@ class InferenceService:
             points=tuple(points),
             ensemble_members=ens_df,
             model_predictions=model_preds,
-            created_at=dt_cls.now(timezone.utc),
+            created_at=dt_cls.now(UTC),  # type: ignore[arg-type]
             model_version="1.0",
         )

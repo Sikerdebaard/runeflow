@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Netherlands (NL) zone definition."""
+
 from __future__ import annotations
 
 from runeflow.domain.weather import WeatherLocation

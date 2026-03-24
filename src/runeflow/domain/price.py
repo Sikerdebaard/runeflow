@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Price domain types."""
+
 from __future__ import annotations
 
 import datetime
@@ -15,8 +16,8 @@ import pandas as pd
 class PriceRecord:
     """Single hourly electricity price."""
 
-    timestamp: pd.Timestamp   # UTC, timezone-aware
-    price_eur_mwh: float      # EPEX spot price in EUR/MWh
+    timestamp: pd.Timestamp  # UTC, timezone-aware
+    price_eur_mwh: float  # EPEX spot price in EUR/MWh
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,7 @@ class PriceSeries:
 
     zone: str
     records: tuple[PriceRecord, ...]
-    source: str               # e.g. "entsoe", "energyzero"
+    source: str  # e.g. "entsoe", "energyzero"
     fetched_at: pd.Timestamp  # When the data was downloaded
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -49,7 +50,7 @@ class PriceSeries:
         zone: str,
         source: str,
         fetched_at: pd.Timestamp | None = None,
-    ) -> "PriceSeries":
+    ) -> PriceSeries:
         """
         Create a PriceSeries from a DataFrame.
 
@@ -68,7 +69,7 @@ class PriceSeries:
 
         records = tuple(
             PriceRecord(timestamp=ts, price_eur_mwh=float(p))
-            for ts, p in zip(idx, prices)
+            for ts, p in zip(idx, prices, strict=False)
         )
         return cls(zone=zone, records=records, source=source, fetched_at=fetched_at)
 

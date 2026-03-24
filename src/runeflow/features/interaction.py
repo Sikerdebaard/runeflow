@@ -3,11 +3,13 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Peak interaction feature group."""
+
 from __future__ import annotations
 
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 

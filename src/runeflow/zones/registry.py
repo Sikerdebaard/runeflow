@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """ZoneRegistry — central registry of all supported ENTSO-E zones."""
+
 from __future__ import annotations
 
 from runeflow.exceptions import UnsupportedZoneError
@@ -30,8 +31,7 @@ class ZoneRegistry:
         _ensure_default_zones_registered()
         if zone not in cls._zones:
             raise UnsupportedZoneError(
-                f"Zone '{zone}' not supported. "
-                f"Available: {', '.join(cls.list_zones())}"
+                f"Zone '{zone}' not supported. Available: {', '.join(cls.list_zones())}"
             )
         return cls._zones[zone]
 

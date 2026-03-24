@@ -3,12 +3,10 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Tests for AppConfig — defaults, env override, directory helpers."""
+
 from __future__ import annotations
 
-import os
 from pathlib import Path
-
-import pytest
 
 from runeflow.config import AppConfig, _default_cache_dir
 

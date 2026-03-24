@@ -5,10 +5,11 @@
 """
 TrainService — assembles training data and fits the ensemble.
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import inject
@@ -17,10 +18,10 @@ import pandas as pd
 from sklearn.impute import SimpleImputer
 
 from runeflow.domain.training import TrainResult
-from runeflow.features import build_pipeline, GENERATION_COLUMNS_HISTORICAL_ONLY
-from runeflow.models.xgboost_quantile import XGBoostQuantileModel
+from runeflow.features import GENERATION_COLUMNS_HISTORICAL_ONLY, build_pipeline
 from runeflow.models.extreme_high import ExtremeHighModel
 from runeflow.models.extreme_low import ExtremeLowModel
+from runeflow.models.xgboost_quantile import XGBoostQuantileModel
 from runeflow.ports.store import DataStore
 from runeflow.zones.config import ZoneConfig
 
@@ -40,8 +41,8 @@ class TrainService:
     @inject.autoparams()
     def __init__(
         self,
-        zone_cfg: ZoneConfig = inject.attr("zone_config"),
-        store: DataStore = inject.attr(DataStore),
+        zone_cfg: ZoneConfig = inject.attr("zone_config"),  # type: ignore[assignment]  # noqa: B008
+        store: DataStore = inject.attr(DataStore),  # type: ignore[assignment]  # noqa: B008
     ) -> None:
         self._zone_cfg = zone_cfg
         self._store = store
@@ -70,9 +71,7 @@ class TrainService:
         X_train_imp = pd.DataFrame(
             imputer.fit_transform(X_train), columns=features, index=X_train.index
         )
-        X_val_imp = pd.DataFrame(
-            imputer.transform(X_val), columns=features, index=X_val.index
-        )
+        X_val_imp = pd.DataFrame(imputer.transform(X_val), columns=features, index=X_val.index)
 
         # Train three models
         xgb_model = XGBoostQuantileModel()
@@ -88,7 +87,9 @@ class TrainService:
             model.save(self._store, zone)
 
         # Persist imputer + feature list
-        import pickle, json
+        import json
+        import pickle
+
         self._store.save_model(pickle.dumps(imputer), zone, "imputer")
         self._store.save_model(json.dumps(features).encode(), zone, "features")
 
@@ -110,7 +111,7 @@ class TrainService:
             features=tuple(features),
             metrics=metrics,
             quality_assessment=quality,
-            trained_at=datetime.now(timezone.utc),
+            trained_at=datetime.now(UTC),  # type: ignore[arg-type]
             model_version="1.0",
             data_range=data_range,
         )
@@ -153,9 +154,7 @@ class TrainService:
         df = df[~df.index.duplicated(keep="first")]
         return df
 
-    def _engineer_and_select_features(
-        self, df: pd.DataFrame
-    ) -> tuple[pd.DataFrame, list[str]]:
+    def _engineer_and_select_features(self, df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         pipeline = build_pipeline(self._zone_cfg)
         df = pipeline.transform(df, self._zone_cfg)
 
@@ -168,8 +167,7 @@ class TrainService:
 
         # Remove historical-only generation columns
         hist_cols = [
-            c for c in df.columns
-            if any(p in c.lower() for p in GENERATION_COLUMNS_HISTORICAL_ONLY)
+            c for c in df.columns if any(p in c.lower() for p in GENERATION_COLUMNS_HISTORICAL_ONLY)
         ]
         df = df.drop(columns=hist_cols, errors="ignore")
 
@@ -191,7 +189,7 @@ class TrainService:
         latest_ts = y_train.index.max()
         days_ago = (latest_ts - y_train.index).total_seconds().to_numpy() / 86_400
         weights = np.exp(-np.log(2) * days_ago / HALF_LIFE_DAYS)
-        weights = weights / weights.mean()          # normalise mean → 1
+        weights = weights / weights.mean()  # normalise mean → 1
         return pd.Series(weights, index=y_train.index, name="sample_weight")
 
     @staticmethod

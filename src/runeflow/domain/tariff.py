@@ -3,20 +3,21 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Tariff domain types."""
+
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 
 @dataclass(frozen=True)
 class TariffFormula:
     """End-user tariff formula for a specific provider."""
 
-    provider_id: str          # e.g. "zonneplan", "tibber"
-    country: str              # e.g. "NL", "DE"
-    label: str                # Human-readable name
+    provider_id: str  # e.g. "zonneplan", "tibber"
+    country: str  # e.g. "NL", "DE"
+    label: str  # Human-readable name
     apply: Callable[[float, datetime.date], float]
     # Input: wholesale EUR/kWh, date (for yearly tax rates)
     # Output: all-in EUR/kWh incl. taxes
@@ -26,6 +27,6 @@ class TariffFormula:
 class TariffRateSlot:
     """Single price slot for tariff JSON export."""
 
-    start: str    # ISO 8601 timestamp string
-    end: str      # ISO 8601 timestamp string
+    start: str  # ISO 8601 timestamp string
+    end: str  # ISO 8601 timestamp string
     price: float  # EUR/kWh (all-in)

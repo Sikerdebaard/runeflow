@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """FallbackPriceAdapter — tries adapters in order, gap-fills from backup adapters."""
+
 from __future__ import annotations
 
 import datetime
@@ -108,14 +109,12 @@ class FallbackPriceAdapter(PricePort):
                     patch = adapter.download_historical(zone, gap_start, gap_end)
                     if patch and len(patch) > 0:
                         logger.info(
-                            f"[Fallback] Filled gap {gap_start}→{gap_end} "
-                            f"via {adapter.name}."
+                            f"[Fallback] Filled gap {gap_start}→{gap_end} via {adapter.name}."
                         )
                         patch_frames.append(patch.to_dataframe().reset_index())
                 except Exception as exc:
                     logger.warning(
-                        f"[Fallback] {adapter.name} failed to fill gap "
-                        f"{gap_start}→{gap_end}: {exc}"
+                        f"[Fallback] {adapter.name} failed to fill gap {gap_start}→{gap_end}: {exc}"
                     )
             if patch_frames:
                 break  # Got patches — stop trying further adapters
@@ -147,7 +146,7 @@ class FallbackPriceAdapter(PricePort):
             end=_to_utc(end) + pd.Timedelta("23h"),
             freq="h",
         )
-        missing = full_range.difference(dates)
+        missing = full_range.difference(dates)  # type: ignore[arg-type]
         if missing.empty:
             return []
 

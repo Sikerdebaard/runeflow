@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Generation adapter package."""
+
 from runeflow.adapters.generation.entsoe import EntsoeGenerationAdapter
 
 __all__ = ["EntsoeGenerationAdapter"]

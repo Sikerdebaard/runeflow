@@ -3,10 +3,10 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Tests for all 7 DQ check classes and CompositeValidator."""
+
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from runeflow.validators.checks import (
     ContinuityCheck,
@@ -19,8 +19,8 @@ from runeflow.validators.checks import (
 )
 from runeflow.validators.composite import CompositeValidator
 
-
 # ── Helpers ────────────────────────────────────────────────────────────────
+
 
 def _hourly_tz(n: int = 48, tz: str = "UTC") -> pd.DatetimeIndex:
     return pd.date_range("2024-06-01", periods=n, freq="h", tz=tz)
@@ -34,6 +34,7 @@ def _price_df(n: int = 48, price: float = 55.0) -> pd.DataFrame:
 
 
 # ── ContinuityCheck ─────────────────────────────────────────────────────────
+
 
 class TestContinuityCheck:
     def test_passes_on_clean_hourly(self):
@@ -73,6 +74,7 @@ class TestContinuityCheck:
 
 # ── NaNCheck ────────────────────────────────────────────────────────────────
 
+
 class TestNaNCheck:
     def test_passes_on_no_nans(self):
         df = _price_df()
@@ -83,7 +85,7 @@ class TestNaNCheck:
     def test_warns_on_high_nan_fraction(self):
         df = _price_df(48)
         # Inject 50 % NaN → exceeds default 10 % threshold
-        df.iloc[: 24] = float("nan")
+        df.iloc[:24] = float("nan")
         result = NaNCheck(threshold=0.10)(df, "test")
         assert result.passed  # NaNCheck only warns, never fails
         assert len(result.warnings) > 0
@@ -98,12 +100,13 @@ class TestNaNCheck:
         df = _price_df(100)
         df.iloc[:15] = float("nan")  # 15% NaN
         result_strict = NaNCheck(threshold=0.05)(df, "ctx")  # 5% threshold
-        result_loose = NaNCheck(threshold=0.20)(df, "ctx")   # 20% threshold
+        result_loose = NaNCheck(threshold=0.20)(df, "ctx")  # 20% threshold
         assert len(result_strict.warnings) > 0
         assert len(result_loose.warnings) == 0
 
 
 # ── PriceRangeCheck ─────────────────────────────────────────────────────────
+
 
 class TestPriceRangeCheck:
     def test_passes_normal_prices(self):
@@ -147,6 +150,7 @@ class TestPriceRangeCheck:
 
 # ── TimezoneCheck ───────────────────────────────────────────────────────────
 
+
 class TestTimezoneCheck:
     def test_passes_tz_aware(self):
         df = _price_df()
@@ -175,6 +179,7 @@ class TestTimezoneCheck:
 
 # ── DuplicatesCheck ─────────────────────────────────────────────────────────
 
+
 class TestDuplicatesCheck:
     def test_passes_no_duplicates(self):
         df = _price_df()
@@ -199,6 +204,7 @@ class TestDuplicatesCheck:
 
 
 # ── StalenessCheck ──────────────────────────────────────────────────────────
+
 
 class TestStalenessCheck:
     def test_passes_recent_data(self):
@@ -230,6 +236,7 @@ class TestStalenessCheck:
 
 # ── RowCountCheck ───────────────────────────────────────────────────────────
 
+
 class TestRowCountCheck:
     def test_passes_enough_rows(self):
         df = _price_df(100)
@@ -255,6 +262,7 @@ class TestRowCountCheck:
 
 # ── CompositeValidator ──────────────────────────────────────────────────────
 
+
 class TestCompositeValidator:
     def test_passes_all_checks(self):
         df = _price_df()
@@ -269,9 +277,7 @@ class TestCompositeValidator:
         # Empty tz-naive DataFrame → fails RowCountCheck + TimezoneCheck
         idx = pd.date_range("2024-01-01", periods=0, freq="h")  # no tz, empty
         df = pd.DataFrame({"Price_EUR_MWh": []}, index=idx)
-        validator = CompositeValidator(
-            checks=[RowCountCheck(1), TimezoneCheck()]
-        )
+        validator = CompositeValidator(checks=[RowCountCheck(1), TimezoneCheck()])
         result = validator.validate(df, "ctx")
         assert not result.passed
         assert len(result.errors) >= 1  # at least RowCountCheck fails
@@ -298,6 +304,7 @@ class TestCompositeValidator:
 
 # ── Additional coverage for edge-case branches ──────────────────────────────
 
+
 class TestContinuityCheckNonIndexed:
     def test_extract_returns_none_for_plain_rangeindex_no_date_col(self):
         """_extract_datetime_index returns None when df has no DatetimeIndex
@@ -321,10 +328,12 @@ class TestValidationResultBool:
     def test_truthy_when_passed(self):
         """ValidationResult.__bool__ (validator.py line 23)."""
         from runeflow.ports.validator import ValidationResult
+
         assert bool(ValidationResult(passed=True)) is True
 
     def test_falsy_when_not_passed(self):
         from runeflow.ports.validator import ValidationResult
+
         assert bool(ValidationResult(passed=False)) is False
 
 
@@ -332,11 +341,13 @@ class TestValidatorFactories:
     def test_default_validator_returns_composite(self):
         """default_validator() factory covers composite.py."""
         from runeflow.validators.composite import default_validator
+
         v = default_validator()
         assert isinstance(v, CompositeValidator)
 
     def test_default_validator_runs_on_valid_df(self):
         from runeflow.validators.composite import default_validator
+
         v = default_validator()
         df = _price_df(200)
         result = v.validate(df, "ctx")
@@ -345,13 +356,14 @@ class TestValidatorFactories:
     def test_price_validator_returns_composite(self):
         """price_validator() factory covers composite.py line 75."""
         from runeflow.validators.composite import price_validator
+
         v = price_validator()
         assert isinstance(v, CompositeValidator)
 
     def test_price_validator_runs_on_valid_df(self):
         from runeflow.validators.composite import price_validator
+
         v = price_validator()
         df = _price_df(200)
         result = v.validate(df, "ctx")
         assert result.passed
-

@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Supplemental adapter package."""
+
 from runeflow.adapters.supplemental.ned import NedAdapter
 
 __all__ = ["NedAdapter"]

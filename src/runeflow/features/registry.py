@@ -3,28 +3,29 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Feature group registry and default pipeline builders."""
+
 from __future__ import annotations
 
 from runeflow.zones.config import ZoneConfig
 
 from .base import FeatureGroup, FeaturePipeline
-from .temporal import TemporalFeatures
-from .solar import SolarPositionFeatures, SolarPowerFeatures
-from .holiday import HolidayFeatures
-from .price_lag import PriceLagFeatures
-from .price_regime import PriceRegimeFeatures
-from .spike import SpikeMomentumFeatures, SpikeRiskFeatures
-from .temperature import TemperatureFeatures
-from .wind import WindFeatures
-from .precipitation import PrecipitationFeatures
 from .cloud import CloudRadiationFeatures
-from .renewable import RenewablePressureFeatures
-from .residual_load import ResidualLoadFeatures
 from .cross_border import CrossBorderFeatures
 from .duck_curve import DuckCurveFeatures
-from .market import MarketStructureFeatures
 from .generation import GenerationForecastFeatures
+from .holiday import HolidayFeatures
 from .interaction import PeakInteractionFeatures
+from .market import MarketStructureFeatures
+from .precipitation import PrecipitationFeatures
+from .price_lag import PriceLagFeatures
+from .price_regime import PriceRegimeFeatures
+from .renewable import RenewablePressureFeatures
+from .residual_load import ResidualLoadFeatures
+from .solar import SolarPositionFeatures, SolarPowerFeatures
+from .spike import SpikeMomentumFeatures, SpikeRiskFeatures
+from .temperature import TemperatureFeatures
+from .temporal import TemporalFeatures
+from .wind import WindFeatures
 
 # Registry maps group name → class (singleton instances created on demand)
 FEATURE_REGISTRY: dict[str, type[FeatureGroup]] = {
@@ -68,7 +69,7 @@ DEFAULT_ORDER = [
     "duck_curve",
     "market_structure",
     "generation",
-    "spike_risk",      # needs temperature + wind_scarcity produced by wind group
+    "spike_risk",  # needs temperature + wind_scarcity produced by wind group
     "interaction",
 ]
 

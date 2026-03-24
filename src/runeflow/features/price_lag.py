@@ -3,11 +3,13 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Price lag feature group."""
+
 from __future__ import annotations
 
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 _LAGS = (1, 2, 3, 6, 12, 24, 48, 72)
@@ -38,7 +40,7 @@ class PriceLagFeatures(FeatureGroup):
         if not valid_prices.empty:
             daily_mean = valid_prices.resample("D").mean()
             for lag in _DAILY_LAGS:
-                shifted_dates = df.index.normalize() - pd.Timedelta(days=lag)
+                shifted_dates = df.index.normalize() - pd.Timedelta(days=lag)  # type: ignore[attr-defined]
                 df[f"{col}_mean_lagdays_{lag}"] = daily_mean.reindex(shifted_dates).to_numpy()
 
         # Rolling statistics (shifted by 1 to prevent leakage)
@@ -52,9 +54,8 @@ class PriceLagFeatures(FeatureGroup):
         df[f"{col}_same_hour_2d"] = df[col].shift(48)
         df[f"{col}_same_hour_7d"] = df[col].shift(168)
 
-        df[f"{col}_same_hour_7d_mean"] = (
-            df.groupby(df.index.hour)[col]
-            .transform(lambda x: x.shift(1).rolling(7, min_periods=3).mean())
+        df[f"{col}_same_hour_7d_mean"] = df.groupby(df.index.hour)[col].transform(  # type: ignore[attr-defined]
+            lambda x: x.shift(1).rolling(7, min_periods=3).mean()
         )
         df[f"{col}_same_hour_deviation"] = (
             df[f"{col}_same_hour_1d"] - df[f"{col}_same_hour_7d_mean"]

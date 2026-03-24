@@ -3,11 +3,13 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Universal wholesale tariff (no markup, zone-independent)."""
+
 from __future__ import annotations
 
 import datetime
 
 from runeflow.domain.tariff import TariffFormula
+
 
 def _apply_wholesale(p: float, dt: datetime.date) -> float:  # noqa: ARG001
     """Wholesale passthrough — no markup."""

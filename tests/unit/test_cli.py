@@ -3,13 +3,12 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """CLI smoke tests using typer.testing.CliRunner."""
+
 from __future__ import annotations
 
-import pytest
 from typer.testing import CliRunner
 
 from runeflow.cli.app import app
-
 
 runner = CliRunner()
 
@@ -78,18 +77,25 @@ class TestUpdateDataInvalidZone:
 
 # ── _InterceptHandler ────────────────────────────────────────────────────────
 
+
 class TestInterceptHandler:
     """Tests for the loguru bridge that intercepts stdlib logging."""
 
     def test_emit_valid_level(self):
         """Emit a record with a standard level name → try body (line 43) is covered."""
         import logging as _logging
+
         from runeflow.cli.app import _InterceptHandler
 
         handler = _InterceptHandler()
         record = _logging.LogRecord(
-            name="test", level=_logging.DEBUG, pathname="test.py",
-            lineno=1, msg="hello", args=(), exc_info=None,
+            name="test",
+            level=_logging.DEBUG,
+            pathname="test.py",
+            lineno=1,
+            msg="hello",
+            args=(),
+            exc_info=None,
         )
         # Must not raise
         handler.emit(record)
@@ -97,12 +103,18 @@ class TestInterceptHandler:
     def test_emit_unknown_level_uses_levelno(self):
         """Emit a record whose levelname loguru does not know → except ValueError path (line 44)."""
         import logging as _logging
+
         from runeflow.cli.app import _InterceptHandler
 
         handler = _InterceptHandler()
         record = _logging.LogRecord(
-            name="test", level=5, pathname="test.py",
-            lineno=1, msg="custom level", args=(), exc_info=None,
+            name="test",
+            level=5,
+            pathname="test.py",
+            lineno=1,
+            msg="custom level",
+            args=(),
+            exc_info=None,
         )
         record.levelname = "NOTSET_UNKNOWN_XYZ"  # loguru does not have this level
         # Must not raise (falls back to record.levelno)
@@ -111,10 +123,12 @@ class TestInterceptHandler:
 
 # ── list-markets empty ────────────────────────────────────────────────────────
 
+
 class TestListMarketsEmpty:
     def test_empty_zones_exits_nonzero(self):
         """If ZoneRegistry returns no zones the command should exit with code 1."""
         from unittest.mock import patch
+
         with patch("runeflow.zones.registry.ZoneRegistry.list_zones", return_value=[]):
             result = runner.invoke(app, ["list-markets"])
             assert result.exit_code == 1
@@ -123,12 +137,16 @@ class TestListMarketsEmpty:
 
 # ── update-data with --years ──────────────────────────────────────────────────
 
+
 class TestUpdateDataCommand:
     def test_with_years_option(self):
         """--years option parses comma-separated years and passes them to UpdateDataService."""
-        from unittest.mock import patch, MagicMock
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.update_data.UpdateDataService") as MockSvc:
+        from unittest.mock import MagicMock, patch
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.update_data.UpdateDataService") as MockSvc,
+        ):
             mock_svc = MagicMock()
             MockSvc.return_value = mock_svc
             result = runner.invoke(app, ["update-data", "--zone", "NL", "--years", "2024,2025"])
@@ -137,15 +155,20 @@ class TestUpdateDataCommand:
             # Verify years were parsed and passed
             call_kwargs = mock_svc.run.call_args
             if call_kwargs:
-                years_arg = call_kwargs.kwargs.get("years") or (call_kwargs.args[0] if call_kwargs.args else None)
+                years_arg = call_kwargs.kwargs.get("years") or (
+                    call_kwargs.args[0] if call_kwargs.args else None
+                )
                 if years_arg is not None:
                     assert 2024 in years_arg
 
     def test_without_years(self):
         """Without --years, the service is called with years=None."""
-        from unittest.mock import patch, MagicMock
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.update_data.UpdateDataService") as MockSvc:
+        from unittest.mock import MagicMock, patch
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.update_data.UpdateDataService") as MockSvc,
+        ):
             mock_svc = MagicMock()
             MockSvc.return_value = mock_svc
             result = runner.invoke(app, ["update-data", "--zone", "NL"])
@@ -154,15 +177,17 @@ class TestUpdateDataCommand:
 
 # ── train command ─────────────────────────────────────────────────────────────
 
+
 class TestTrainCommand:
     def test_train_success(self):
-        from unittest.mock import patch, MagicMock
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.train.TrainService") as MockTrain:
+        from unittest.mock import MagicMock, patch
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.train.TrainService") as MockTrain,
+        ):
             mock_result = MagicMock()
-            mock_result.metrics = {
-                "xgboost_quantile": {"mae": 4.5, "r2": 0.82, "coverage": 94.8}
-            }
+            mock_result.metrics = {"xgboost_quantile": {"mae": 4.5, "r2": 0.82, "coverage": 94.8}}
             MockTrain.return_value.run.return_value = mock_result
             result = runner.invoke(app, ["train", "--zone", "NL"])
             assert result.exit_code == 0
@@ -170,9 +195,12 @@ class TestTrainCommand:
 
     def test_train_missing_metric_key(self):
         """If xgboost_quantile metrics dict lacks keys, command may fail gracefully."""
-        from unittest.mock import patch, MagicMock
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.train.TrainService") as MockTrain:
+        from unittest.mock import MagicMock, patch
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.train.TrainService") as MockTrain,
+        ):
             mock_result = MagicMock()
             # Provide float values (missing keys with 'n/a' defaults cause format errors)
             mock_result.metrics = {"xgboost_quantile": {"mae": 0.0, "r2": 0.0, "coverage": 0.0}}
@@ -184,12 +212,17 @@ class TestTrainCommand:
 
 # ── warmup-cache command ──────────────────────────────────────────────────────
 
+
 class TestWarmupCacheCommand:
     def test_warmup_cache_success(self):
+        from unittest.mock import patch
+
         import pandas as pd
-        from unittest.mock import patch, MagicMock
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.warmup.WarmupService") as MockWarmup:
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.warmup.WarmupService") as MockWarmup,
+        ):
             mock_df = pd.DataFrame({"a": range(100)})
             MockWarmup.return_value.run.return_value = mock_df
             result = runner.invoke(app, ["warmup-cache", "--zone", "NL"])
@@ -197,10 +230,14 @@ class TestWarmupCacheCommand:
             assert "100" in result.output
 
     def test_warmup_cache_force_flag(self):
+        from unittest.mock import patch
+
         import pandas as pd
-        from unittest.mock import patch, MagicMock
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.warmup.WarmupService") as MockWarmup:
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.warmup.WarmupService") as MockWarmup,
+        ):
             mock_df = pd.DataFrame({"a": range(50)})
             MockWarmup.return_value.run.return_value = mock_df
             result = runner.invoke(app, ["warmup-cache", "--zone", "NL", "--force"])
@@ -210,14 +247,18 @@ class TestWarmupCacheCommand:
 
 # ── inference command ─────────────────────────────────────────────────────────
 
+
 class TestInferenceCommand:
     def test_inference_success(self):
+        from unittest.mock import MagicMock, patch
+
         import inject
-        import pandas as pd
-        from unittest.mock import patch, MagicMock
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.inference.InferenceService") as MockInf, \
-             patch.object(inject, "instance") as mock_inject_instance:
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.inference.InferenceService") as MockInf,
+            patch.object(inject, "instance") as mock_inject_instance,
+        ):
             mock_result = MagicMock()
             mock_result.points = [MagicMock(), MagicMock(), MagicMock()]
             MockInf.return_value.run.return_value = mock_result
@@ -228,13 +269,17 @@ class TestInferenceCommand:
             assert "3" in result.output  # 3 forecast points
 
     def test_inference_with_output(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
         import inject
         import pandas as pd
-        from unittest.mock import patch, MagicMock
+
         out = tmp_path / "forecast.json"
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.inference.InferenceService") as MockInf, \
-             patch.object(inject, "instance") as mock_inject_instance:
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.inference.InferenceService") as MockInf,
+            patch.object(inject, "instance") as mock_inject_instance,
+        ):
             mock_result = MagicMock()
             mock_result.points = []
             mock_result.to_dataframe.return_value = pd.DataFrame()
@@ -248,61 +293,92 @@ class TestInferenceCommand:
 
 # ── export-tariffs command ────────────────────────────────────────────────────
 
+
 class TestExportTariffsCommand:
     def test_export_tariffs_success(self, tmp_path):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         out = tmp_path / "tariffs.json"
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.export_tariffs.ExportTariffsService") as MockSvc:
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.export_tariffs.ExportTariffsService") as MockSvc,
+        ):
             mock_slots = [MagicMock()] * 24
             MockSvc.return_value.run.return_value = mock_slots
-            result = runner.invoke(app, [
-                "export-tariffs", "--zone", "NL",
-                "--provider", "vattenfall",
-                "--output", str(out),
-            ])
+            result = runner.invoke(
+                app,
+                [
+                    "export-tariffs",
+                    "--zone",
+                    "NL",
+                    "--provider",
+                    "vattenfall",
+                    "--output",
+                    str(out),
+                ],
+            )
             assert result.exit_code == 0
             assert "24" in result.output
 
     def test_export_tariffs_no_output(self):
-        from unittest.mock import patch, MagicMock
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.export_tariffs.ExportTariffsService") as MockSvc:
+        from unittest.mock import patch
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.export_tariffs.ExportTariffsService") as MockSvc,
+        ):
             MockSvc.return_value.run.return_value = []
-            result = runner.invoke(app, ["export-tariffs", "--zone", "NL", "--provider", "wholesale"])
+            result = runner.invoke(
+                app, ["export-tariffs", "--zone", "NL", "--provider", "wholesale"]
+            )
             assert result.exit_code == 0
 
 
 # ── plot-uncertainty command ──────────────────────────────────────────────────
 
+
 class TestPlotUncertaintyCommand:
     def test_plot_uncertainty_success(self, tmp_path):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
+
         out = tmp_path / "plot.png"
-        with patch("runeflow.cli.app._setup"), \
-             patch("runeflow.services.plot.PlotService") as MockPlot:
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.plot.PlotService") as MockPlot,
+        ):
             MockPlot.return_value.run.return_value = out
-            result = runner.invoke(app, [
-                "plot-uncertainty", "--zone", "NL",
-                "--provider", "wholesale",
-                "--output", str(out),
-            ])
+            result = runner.invoke(
+                app,
+                [
+                    "plot-uncertainty",
+                    "--zone",
+                    "NL",
+                    "--provider",
+                    "wholesale",
+                    "--output",
+                    str(out),
+                ],
+            )
             assert result.exit_code == 0
             assert str(out) in result.output
 
 
 # ── main entry point ──────────────────────────────────────────────────────────
 
+
 class TestMainEntryPoint:
     def test_main_is_callable(self):
         """main() function exists and is callable (line 197)."""
         from runeflow.cli.app import main
+
         assert callable(main)
 
     def test_main_calls_app(self):
         """Calling main() invokes app() — covers cli/app.py line 197."""
         from unittest.mock import patch
+
         from runeflow.cli.app import main
+
         with patch("runeflow.cli.app.app") as mock_app:
             main()
             mock_app.assert_called_once()
@@ -313,6 +389,7 @@ class TestInterceptHandlerViaLogging:
         """_InterceptHandler.emit via standard logger covers lines 47-48 (frame walk)."""
         import logging
         from unittest.mock import patch
+
         from runeflow.cli.app import _InterceptHandler
 
         handler = _InterceptHandler()
@@ -351,12 +428,14 @@ class TestInterceptHandlerViaLogging:
         handler = _InterceptHandler()
         record = logging.LogRecord("test", logging.INFO, "", 0, "frame test", (), None)
 
-        with patch("logging.currentframe", return_value=log_frame):
-            with patch("runeflow.cli.app.logger") as mock_logger:
-                mock_logger.level.return_value.name = "INFO"
-                mock_opt = MagicMock()
-                mock_logger.opt.return_value = mock_opt
-                handler.emit(record)
+        with (
+            patch("logging.currentframe", return_value=log_frame),
+            patch("runeflow.cli.app.logger") as mock_logger,
+        ):
+            mock_logger.level.return_value.name = "INFO"
+            mock_opt = MagicMock()
+            mock_logger.opt.return_value = mock_opt
+            handler.emit(record)
 
         # Depth should have been incremented (started at 2, +1 for the logging frame)
         mock_logger.opt.assert_called_once()

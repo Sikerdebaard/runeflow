@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """SupplementalDataPort — zone-specific supplemental data (e.g. NED for NL)."""
+
 from __future__ import annotations
 
 import datetime

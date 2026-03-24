@@ -3,13 +3,14 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Model registry."""
+
 from __future__ import annotations
 
 from runeflow.ports.model import ModelPort
 
-from .xgboost_quantile import XGBoostQuantileModel
 from .extreme_high import ExtremeHighModel
 from .extreme_low import ExtremeLowModel
+from .xgboost_quantile import XGBoostQuantileModel
 
 MODEL_REGISTRY: dict[str, type[ModelPort]] = {
     "xgboost_quantile": XGBoostQuantileModel,

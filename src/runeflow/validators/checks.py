@@ -3,9 +3,8 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Individual DQ check classes."""
-from __future__ import annotations
 
-import datetime
+from __future__ import annotations
 
 import pandas as pd
 
@@ -52,9 +51,7 @@ class NaNCheck:
         for col in df.columns:
             frac = df[col].isna().mean()
             if frac > self._threshold:
-                warnings.append(
-                    f"[{context}] NaNCheck: column '{col}' has {frac:.1%} NaN values."
-                )
+                warnings.append(f"[{context}] NaNCheck: column '{col}' has {frac:.1%} NaN values.")
         return ValidationResult(passed=True, warnings=warnings)
 
 
@@ -91,12 +88,11 @@ class TimezoneCheck:
     """Ensure timestamp index is timezone-aware."""
 
     def __call__(self, df: pd.DataFrame, context: str) -> ValidationResult:
-        if isinstance(df.index, pd.DatetimeIndex):
-            if df.index.tz is None:
-                return ValidationResult(
-                    passed=False,
-                    errors=[f"[{context}] TimezoneCheck: DataFrame index is timezone-naive."],
-                )
+        if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is None:
+            return ValidationResult(
+                passed=False,
+                errors=[f"[{context}] TimezoneCheck: DataFrame index is timezone-naive."],
+            )
         return ValidationResult(passed=True)
 
 
@@ -120,9 +116,7 @@ class DuplicatesCheck:
             if n_dupes:
                 return ValidationResult(
                     passed=False,
-                    errors=[
-                        f"[{context}] DuplicatesCheck: {n_dupes} duplicate 'date' values."
-                    ],
+                    errors=[f"[{context}] DuplicatesCheck: {n_dupes} duplicate 'date' values."],
                 )
         return ValidationResult(passed=True)
 
@@ -164,8 +158,7 @@ class RowCountCheck:
             return ValidationResult(
                 passed=False,
                 errors=[
-                    f"[{context}] RowCountCheck: only {len(df)} rows "
-                    f"(minimum {self._min_rows})."
+                    f"[{context}] RowCountCheck: only {len(df)} rows (minimum {self._min_rows})."
                 ],
             )
         return ValidationResult(passed=True)

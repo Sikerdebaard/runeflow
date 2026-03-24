@@ -3,11 +3,13 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Price regime / volatility feature group."""
+
 from __future__ import annotations
 
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 
@@ -34,9 +36,7 @@ class PriceRegimeFeatures(FeatureGroup):
         rolling_168h_mean = shifted.rolling(168, min_periods=72).mean()
         df[f"{col}_rolling_168h_mean"] = rolling_168h_mean  # may already exist, harmless
 
-        df[f"{col}_regime_change_7d"] = (
-            rolling_168h_mean / (df[f"{col}_regime_30d"] + 1e-8)
-        )
+        df[f"{col}_regime_change_7d"] = rolling_168h_mean / (df[f"{col}_regime_30d"] + 1e-8)
 
         # Volatility
         df[f"{col}_volatility_24h"] = shifted.rolling(24, min_periods=12).std()

@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """CompositeValidator — runs a chain of individual DQ checks."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -37,7 +38,7 @@ class CompositeValidator(DataValidator):
         all_warnings: list[str] = []
 
         for check in self._checks:
-            result: ValidationResult = check(df, context)
+            result: ValidationResult = check(df, context)  # type: ignore[operator]
             all_errors.extend(result.errors)
             all_warnings.extend(result.warnings)
 

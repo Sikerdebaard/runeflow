@@ -3,9 +3,10 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Forecast domain types."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -15,16 +16,16 @@ class ForecastPoint:
     """Single forecast hour with uncertainty bounds."""
 
     timestamp: pd.Timestamp
-    prediction: float         # Central estimate (EUR/MWh)
-    lower: float              # Combined lower bound (weather ensemble ∪ model quantiles)
-    upper: float              # Combined upper bound (weather ensemble ∪ model quantiles)
-    uncertainty: float        # upper - lower
-    model_agreement: float    # 0–1 score
-    lower_static: float = 0.0    # Model-quantile-only lower bound (no weather spread)
-    upper_static: float = 0.0    # Model-quantile-only upper bound (no weather spread)
-    ensemble_p50: float = 0.0    # Median of 51 weather-ensemble member predictions
-    ensemble_p25: float = 0.0    # P25 of ensemble members (IQR lower)
-    ensemble_p75: float = 0.0    # P75 of ensemble members (IQR upper)
+    prediction: float  # Central estimate (EUR/MWh)
+    lower: float  # Combined lower bound (weather ensemble ∪ model quantiles)
+    upper: float  # Combined upper bound (weather ensemble ∪ model quantiles)
+    uncertainty: float  # upper - lower
+    model_agreement: float  # 0–1 score
+    lower_static: float = 0.0  # Model-quantile-only lower bound (no weather spread)
+    upper_static: float = 0.0  # Model-quantile-only upper bound (no weather spread)
+    ensemble_p50: float = 0.0  # Median of 51 weather-ensemble member predictions
+    ensemble_p25: float = 0.0  # P25 of ensemble members (IQR lower)
+    ensemble_p75: float = 0.0  # P75 of ensemble members (IQR upper)
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,7 @@ class ForecastResult:
 
     zone: str
     points: tuple[ForecastPoint, ...]
-    ensemble_members: pd.DataFrame   # 51-column DataFrame, one per weather scenario
+    ensemble_members: pd.DataFrame  # 51-column DataFrame, one per weather scenario
     model_predictions: dict[str, pd.Series]  # Individual model outputs
     created_at: pd.Timestamp
     model_version: str

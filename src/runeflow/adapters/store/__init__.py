@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Store adapter package."""
+
 from runeflow.adapters.store.parquet import ParquetStore
 
 __all__ = ["ParquetStore"]

@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """CLI package."""
+
 from .app import app, main
 
 __all__ = ["app", "main"]

@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Models public API."""
-from .registry import MODEL_REGISTRY, XGBoostQuantileModel, ExtremeHighModel, ExtremeLowModel
+
+from .registry import MODEL_REGISTRY, ExtremeHighModel, ExtremeLowModel, XGBoostQuantileModel
 
 __all__ = ["MODEL_REGISTRY", "XGBoostQuantileModel", "ExtremeHighModel", "ExtremeLowModel"]

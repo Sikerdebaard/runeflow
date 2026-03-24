@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Dutch tariff formulas."""
+
 from __future__ import annotations
 
 import datetime
@@ -18,14 +19,14 @@ NL_VAT = 1.21
 _NL_ENERGIEBELASTING: dict[int, float] = {
     2020: 0.08620,
     2021: 0.08693,
-    2022: 0.04359,   # Emergency cut mid-year; use average
+    2022: 0.04359,  # Emergency cut mid-year; use average
     2023: 0.12599,
     2024: 0.10154,
     2025: 0.10154,
     2026: 0.09161157,
 }
 
-_NL_EB_DEFAULT = 0.10154   # Fallback for unknown years
+_NL_EB_DEFAULT = 0.10154  # Fallback for unknown years
 
 
 def _get_eb(dt: datetime.date) -> float:
@@ -34,6 +35,7 @@ def _get_eb(dt: datetime.date) -> float:
 
 
 # ── Individual formulas ───────────────────────────────────────────────────────
+
 
 def _apply_zonneplan(p: float, dt: datetime.date) -> float:
     """Zonneplan: spot + 2 ct/kWh markup incl. VAT."""
@@ -94,7 +96,9 @@ def _apply_wholesale(p: float, dt: datetime.date) -> float:  # noqa: ARG001
 
 NL_TARIFF_FORMULAS: dict[str, TariffFormula] = {
     "wholesale": TariffFormula(
-        "wholesale", "NL", "Wholesale (excl. tax)",
+        "wholesale",
+        "NL",
+        "Wholesale (excl. tax)",
         _apply_wholesale,
     ),
     "zonneplan": TariffFormula("zonneplan", "NL", "Zonneplan", _apply_zonneplan),

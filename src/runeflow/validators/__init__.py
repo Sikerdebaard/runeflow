@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Validators package."""
+
 from runeflow.validators.composite import CompositeValidator, default_validator, price_validator
 
 __all__ = ["CompositeValidator", "default_validator", "price_validator"]

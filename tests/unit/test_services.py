@@ -4,36 +4,35 @@
 
 """Tests for the service layer (WarmupService, UpdateDataService,
 ExportTariffsService, TrainService static helpers)."""
+
 from __future__ import annotations
 
-import datetime
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from runeflow.domain.price import PriceRecord, PriceSeries
-from runeflow.domain.weather import WeatherSeries, WeatherLocation
 from runeflow.domain.forecast import ForecastPoint, ForecastResult
-from runeflow.domain.tariff import TariffFormula
+from runeflow.domain.price import PriceRecord, PriceSeries
+from runeflow.domain.weather import WeatherSeries
 from runeflow.zones.registry import ZoneRegistry
-
 
 # ---------------------------------------------------------------------------
 # Helpers / Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _price_series(zone: str = "NL", n: int = 48) -> PriceSeries:
     ts = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
     records = tuple(
-        PriceRecord(timestamp=t, price_eur_mwh=float(50 + i % 20))
-        for i, t in enumerate(ts)
+        PriceRecord(timestamp=t, price_eur_mwh=float(50 + i % 20)) for i, t in enumerate(ts)
     )
     return PriceSeries(
-        zone=zone, records=records, source="test",
+        zone=zone,
+        records=records,
+        source="test",
         fetched_at=pd.Timestamp.now("UTC"),
     )
 
@@ -59,8 +58,12 @@ def _forecast_result(zone: str = "NL", n: int = 24) -> ForecastResult:
     ts = pd.date_range("2024-06-01", periods=n, freq="h", tz="UTC")
     points = tuple(
         ForecastPoint(
-            timestamp=t, prediction=60.0, lower=40.0, upper=80.0,
-            uncertainty=40.0, model_agreement=0.9,
+            timestamp=t,
+            prediction=60.0,
+            lower=40.0,
+            upper=80.0,
+            uncertainty=40.0,
+            model_agreement=0.9,
         )
         for t in ts
     )
@@ -87,6 +90,7 @@ def real_zone_cfg_nl():
 # Services __init__ import smoke-test
 # ---------------------------------------------------------------------------
 
+
 class TestServicesInit:
     def test_import_all_services(self):
         """Importing services.__init__ should expose all public service classes."""
@@ -104,6 +108,7 @@ class TestServicesInit:
 # ---------------------------------------------------------------------------
 # WarmupService
 # ---------------------------------------------------------------------------
+
 
 class TestWarmupService:
     def _make_store(self) -> MagicMock:
@@ -201,6 +206,7 @@ class TestWarmupService:
 # UpdateDataService
 # ---------------------------------------------------------------------------
 
+
 class TestUpdateDataService:
     def _make_ports(self, zone: str = "NL"):
         zone_cfg = ZoneRegistry.get(zone)
@@ -249,7 +255,6 @@ class TestUpdateDataService:
         zone_cfg, price_port, weather_port, store, validator = self._make_ports()
         # Price series is up-to-date
         existing = _price_series(n=8760)
-        existing_end = existing.records[-1].timestamp
         store.load_prices.return_value = existing
 
         # Make existing end after any requested end (2024-12-31)
@@ -261,7 +266,9 @@ class TestUpdateDataService:
             ),
         )
         store.load_prices.return_value = PriceSeries(
-            zone="NL", records=late_records, source="test",
+            zone="NL",
+            records=late_records,
+            source="test",
             fetched_at=pd.Timestamp.now("UTC"),
         )
 
@@ -297,8 +304,8 @@ class TestUpdateDataService:
         store.save_prices.assert_called_once()
 
     def test_generation_port_used_when_provided(self):
-        from runeflow.services.update_data import UpdateDataService
         from runeflow.domain.generation import GenerationSeries
+        from runeflow.services.update_data import UpdateDataService
 
         zone_cfg, price_port, weather_port, store, validator = self._make_ports()
         gen_port = MagicMock()
@@ -402,6 +409,7 @@ class TestUpdateDataService:
 # ExportTariffsService
 # ---------------------------------------------------------------------------
 
+
 class TestExportTariffsService:
     def _make_service(self, tmp_path, zone: str = "NL"):
         from runeflow.services.export_tariffs import ExportTariffsService
@@ -419,7 +427,7 @@ class TestExportTariffsService:
     def test_run_writes_json(self, real_zone_cfg_nl, tmp_path):
         svc, _, _ = self._make_service(tmp_path)
         out = tmp_path / "tariffs.json"
-        slots = svc.run(provider="vattenfall", output_path=out)
+        svc.run(provider="vattenfall", output_path=out)
 
         assert out.exists()
         payload = json.loads(out.read_text())
@@ -435,7 +443,7 @@ class TestExportTariffsService:
     def test_run_default_output_path(self, real_zone_cfg_nl, tmp_path, monkeypatch):
         svc, _, _ = self._make_service(tmp_path)
         monkeypatch.chdir(tmp_path)
-        slots = svc.run(provider="wholesale")
+        svc.run(provider="wholesale")
         # A file should be produced in cwd
         assert (tmp_path / "tariffs_nl.json").exists()
 
@@ -473,22 +481,25 @@ class TestExportTariffsService:
         ts = pd.date_range(now_utc - pd.Timedelta(hours=23), periods=24, freq="h", tz="UTC")
         forecast_points = tuple(
             ForecastPoint(
-                timestamp=t, prediction=60.0, lower=40.0, upper=80.0,
-                uncertainty=40.0, model_agreement=0.9,
+                timestamp=t,
+                prediction=60.0,
+                lower=40.0,
+                upper=80.0,
+                uncertainty=40.0,
+                model_agreement=0.9,
             )
             for t in ts
         )
         forecast = ForecastResult(
-            zone="NL", points=forecast_points,
+            zone="NL",
+            points=forecast_points,
             ensemble_members=pd.DataFrame(index=ts),
             model_predictions={},
             created_at=pd.Timestamp.now("UTC"),
             model_version="1.0",
         )
         actual_prices_df = pd.DataFrame({"Price_EUR_MWh": [100.0] * 24}, index=ts)
-        actual_series = PriceSeries.from_dataframe(
-            actual_prices_df, zone="NL", source="entsoe"
-        )
+        actual_series = PriceSeries.from_dataframe(actual_prices_df, zone="NL", source="entsoe")
         store = MagicMock()
         store.load_latest_forecast.return_value = forecast
         store.load_prices.return_value = actual_series
@@ -545,6 +556,7 @@ class TestExportTariffsService:
         # Should not raise
         slots = svc.run(provider="wholesale", output_path=out)
         assert len(slots) == 24
+
     def test_prices_from_store_with_tz_naive_index(self, tmp_path):
         """PriceSeries with tz-naive index hits the tz_localize branch (line 129)."""
         from runeflow.services.export_tariffs import ExportTariffsService
@@ -552,10 +564,7 @@ class TestExportTariffsService:
         zone_cfg = ZoneRegistry.get("NL")
         # Hardcoded tz-naive date range (no tz= arg → index.tz is None)
         ts_naive = pd.date_range("2024-01-01", periods=24, freq="h")
-        records = tuple(
-            PriceRecord(timestamp=t, price_eur_mwh=50.0)
-            for t in ts_naive
-        )
+        records = tuple(PriceRecord(timestamp=t, price_eur_mwh=50.0) for t in ts_naive)
         naive_series = PriceSeries(
             zone="NL", records=records, source="test", fetched_at=pd.Timestamp.now("UTC")
         )
@@ -580,10 +589,7 @@ class TestExportTariffsService:
 
         # Day-ahead data with tz-naive timestamps
         ts_naive = pd.date_range("2024-06-01", periods=24, freq="h")
-        records = tuple(
-            PriceRecord(timestamp=t, price_eur_mwh=200.0)
-            for t in ts_naive
-        )
+        records = tuple(PriceRecord(timestamp=t, price_eur_mwh=200.0) for t in ts_naive)
         da_series = PriceSeries(
             zone="NL", records=records, source="da", fetched_at=pd.Timestamp.now("UTC")
         )
@@ -605,6 +611,7 @@ class TestExportTariffsService:
 # TrainService static helpers
 # ---------------------------------------------------------------------------
 
+
 class TestTrainServiceHelpers:
     def test_compute_sample_weights_mean_one(self):
         from runeflow.services.train import TrainService
@@ -623,8 +630,8 @@ class TestTrainServiceHelpers:
         weights = TrainService._compute_sample_weights(y)
 
         # Last 30 days should have higher weight than first 30 days
-        w_recent = weights.iloc[-30 * 24:].mean()
-        w_old = weights.iloc[:30 * 24].mean()
+        w_recent = weights.iloc[-30 * 24 :].mean()
+        w_old = weights.iloc[: 30 * 24].mean()
         assert w_recent > w_old
 
     def test_compute_sample_weights_monotone_increasing(self):
@@ -640,9 +647,7 @@ class TestTrainServiceHelpers:
     def test_assess_quality_good_metrics(self):
         from runeflow.services.train import TrainService
 
-        metrics = {
-            "xgboost_quantile": {"mae": 3.0, "r2": 0.92, "coverage": 95.0}
-        }
+        metrics = {"xgboost_quantile": {"mae": 3.0, "r2": 0.92, "coverage": 95.0}}
         result = TrainService._assess_quality(metrics, n_train=10000)
         assert result["mae_grade"] == "good"
         assert result["r2_grade"] == "good"
@@ -651,9 +656,7 @@ class TestTrainServiceHelpers:
     def test_assess_quality_poor_metrics(self):
         from runeflow.services.train import TrainService
 
-        metrics = {
-            "xgboost_quantile": {"mae": 25.0, "r2": 0.2, "coverage": 60.0}
-        }
+        metrics = {"xgboost_quantile": {"mae": 25.0, "r2": 0.2, "coverage": 60.0}}
         result = TrainService._assess_quality(metrics, n_train=100)
         assert result["mae_grade"] == "poor"
         assert result["r2_grade"] == "poor"
@@ -662,9 +665,7 @@ class TestTrainServiceHelpers:
     def test_assess_quality_ok_metrics(self):
         from runeflow.services.train import TrainService
 
-        metrics = {
-            "xgboost_quantile": {"mae": 7.0, "r2": 0.75, "coverage": 87.0}
-        }
+        metrics = {"xgboost_quantile": {"mae": 7.0, "r2": 0.75, "coverage": 87.0}}
         result = TrainService._assess_quality(metrics, n_train=5000)
         assert result["mae_grade"] in ("ok", "good")
         assert result["r2_grade"] in ("ok", "good")
@@ -730,11 +731,10 @@ class TestTrainServiceRun:
 
     def test_run_returns_train_result(self):
         """TrainService.run() with mocked models returns a TrainResult."""
-        from runeflow.services.train import TrainService
         from runeflow.domain.training import TrainResult
-        from runeflow.models.xgboost_quantile import XGBoostQuantileModel
         from runeflow.models.extreme_high import ExtremeHighModel
         from runeflow.models.extreme_low import ExtremeLowModel
+        from runeflow.models.xgboost_quantile import XGBoostQuantileModel
 
         price_mock, weather_mock = self._make_training_data()
         svc = self._make_service(price_mock, weather_mock)
@@ -806,17 +806,18 @@ class TestTrainServiceRun:
     def test_init_via_inject(self, tmp_path):
         """TrainService.__init__ (lines 46-47) via inject.configure."""
         import inject
-        from runeflow.services.train import TrainService
-        from runeflow.zones.registry import ZoneRegistry
-        from runeflow.zones.config import ZoneConfig
+
         from runeflow.ports.store import DataStore
+        from runeflow.services.train import TrainService
+        from runeflow.zones.config import ZoneConfig
+        from runeflow.zones.registry import ZoneRegistry
 
         zone_cfg = ZoneRegistry.get("NL")
         store_mock = MagicMock(spec=DataStore)
 
         def _binder(binder):
-            binder.bind(ZoneConfig, zone_cfg)       # class-based lookup
-            binder.bind("zone_config", zone_cfg)    # string-based lookup
+            binder.bind(ZoneConfig, zone_cfg)  # class-based lookup
+            binder.bind("zone_config", zone_cfg)  # string-based lookup
             binder.bind(DataStore, store_mock)
 
         inject.configure(_binder, allow_override=True)
@@ -915,10 +916,7 @@ class TestInferenceService:
             for t in timestamps
         }
         # 5 member results
-        member_results = [
-            {t: {"prediction": 50.0 + i} for t in timestamps}
-            for i in range(5)
-        ]
+        member_results = [{t: {"prediction": 50.0 + i} for t in timestamps} for i in range(5)]
 
         result = svc._build_result("NL", timestamps, det_results, member_results)
 
@@ -1044,6 +1042,7 @@ class TestInferenceService:
     def test_load_supplemental_port_returns_none_uses_cache(self):
         """Port returns None DataFrame → falls back to store cache."""
         from unittest.mock import MagicMock
+
         import pandas as pd
 
         port = MagicMock()
@@ -1062,6 +1061,7 @@ class TestInferenceService:
     def test_load_supplemental_port_returns_empty_df_uses_cache(self):
         """Port returns empty DataFrame → falls back to store cache."""
         from unittest.mock import MagicMock
+
         import pandas as pd
 
         port = MagicMock()
@@ -1080,6 +1080,7 @@ class TestInferenceService:
     def test_load_supplemental_unsupported_zone_skips_port_uses_cache(self):
         """Zone not supported by port → skip port entirely, use cache."""
         from unittest.mock import MagicMock
+
         import pandas as pd
 
         port = MagicMock()
@@ -1113,8 +1114,9 @@ class TestInferenceService:
         """_load_models loads all models and returns correct tuple."""
         import json
         import pickle
+        from unittest.mock import patch
+
         from sklearn.impute import SimpleImputer
-        from unittest.mock import MagicMock, patch
 
         svc = self._make_service()
 
@@ -1126,9 +1128,11 @@ class TestInferenceService:
             imputer_bytes if name == "imputer" else features_json if name == "features" else None
         )
 
-        with patch("runeflow.services.inference.XGBoostQuantileModel") as mock_xgb, \
-             patch("runeflow.services.inference.ExtremeHighModel") as mock_high, \
-             patch("runeflow.services.inference.ExtremeLowModel") as mock_low:
+        with (
+            patch("runeflow.services.inference.XGBoostQuantileModel") as mock_xgb,
+            patch("runeflow.services.inference.ExtremeHighModel") as mock_high,
+            patch("runeflow.services.inference.ExtremeLowModel") as mock_low,
+        ):
             mock_xgb.return_value.load.return_value = True
             mock_high.return_value.load.return_value = True
             mock_low.return_value.load.return_value = True
@@ -1149,14 +1153,17 @@ class TestInferenceService:
             None if name == "imputer" else features_json
         )
 
-        with patch("runeflow.services.inference.XGBoostQuantileModel") as mock_xgb, \
-             patch("runeflow.services.inference.ExtremeHighModel"), \
-             patch("runeflow.services.inference.ExtremeLowModel"):
+        with (
+            patch("runeflow.services.inference.XGBoostQuantileModel") as mock_xgb,
+            patch("runeflow.services.inference.ExtremeHighModel"),
+            patch("runeflow.services.inference.ExtremeLowModel"),
+        ):
             mock_xgb.return_value.load.return_value = True
 
             xgb, ext_high, ext_low, imputer, features = svc._load_models("NL")
 
         from sklearn.impute import SimpleImputer
+
         assert isinstance(imputer, SimpleImputer)
         assert features == []
 
@@ -1164,13 +1171,14 @@ class TestInferenceService:
 
     def test_init_via_inject_no_supplemental_port(self):
         """__init__ with inject.instance failing for SupplementalDataPort → None."""
-        import inject
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
-        from runeflow.services.inference import InferenceService
-        from runeflow.zones.config import ZoneConfig
+        import inject
+
         from runeflow.ports.store import DataStore
         from runeflow.ports.weather import WeatherPort
+        from runeflow.services.inference import InferenceService
+        from runeflow.zones.config import ZoneConfig
 
         zone_cfg = MagicMock(spec=ZoneConfig)
         zone_cfg.zone = "NL"
@@ -1200,7 +1208,6 @@ class TestRunForecastWorker:
         """Worker processes a single future timestamp and returns results dict."""
         from unittest.mock import MagicMock, patch
 
-        import numpy as np
         import pandas as pd
         from sklearn.impute import SimpleImputer
 
@@ -1255,13 +1262,22 @@ class TestRunForecastWorker:
             index=[ts],
         )
 
-        with patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline):
-            with patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble):
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, features_list,
-                    zone_cfg, label="test",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline),
+            patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble),
+        ):
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                features_list,
+                zone_cfg,
+                label="test",
+            )
 
         assert ts in results
         assert results[ts]["prediction"] == 50.0
@@ -1282,42 +1298,67 @@ class TestRunForecastWorker:
         weather_df = pd.DataFrame({"temperature_2m": [10.0]}, index=timestamps)
 
         warmup_idx = pd.date_range("2024-06-15", periods=24, freq="h", tz="UTC")
-        warmup = pd.DataFrame({"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx)
+        warmup = pd.DataFrame(
+            {"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx
+        )
 
         imputer = SimpleImputer(strategy="mean")
         imputer.fit(pd.DataFrame({"temperature_2m": [10.0]}))
 
         xgb = MagicMock()
         xgb._model_lower = xgb._model_p50 = xgb._model_upper = None
-        xgb.predict.return_value = pd.DataFrame({"prediction": [50.0], "lower": [40.0], "upper": [60.0]}, index=[ts])
+        xgb.predict.return_value = pd.DataFrame(
+            {"prediction": [50.0], "lower": [40.0], "upper": [60.0]}, index=[ts]
+        )
 
         ext_high = MagicMock()
         ext_high._model = None
         ext_high.is_trained = True
-        ext_high.predict.return_value = pd.DataFrame({"prediction": [65.0], "lower": [60.0], "upper": [70.0]}, index=[ts])
+        ext_high.predict.return_value = pd.DataFrame(
+            {"prediction": [65.0], "lower": [60.0], "upper": [70.0]}, index=[ts]
+        )
 
         ext_low = MagicMock()
         ext_low._model = None
         ext_low.is_trained = True
-        ext_low.predict.return_value = pd.DataFrame({"prediction": [35.0], "lower": [30.0], "upper": [40.0]}, index=[ts])
+        ext_low.predict.return_value = pd.DataFrame(
+            {"prediction": [35.0], "lower": [30.0], "upper": [40.0]}, index=[ts]
+        )
 
         zone_cfg = MagicMock()
         mock_pipeline = MagicMock()
-        mock_pipeline.transform.return_value = pd.DataFrame({"temperature_2m": [10.0]}, index=timestamps)
+        mock_pipeline.transform.return_value = pd.DataFrame(
+            {"temperature_2m": [10.0]}, index=timestamps
+        )
 
         mock_ensemble = MagicMock()
-        mock_ensemble.combine.return_value = pd.DataFrame({
-            "prediction": [50.0], "lower": [35.0], "upper": [65.0],
-            "uncertainty": [30.0], "model_agreement": [0.8],
-        }, index=[ts])
+        mock_ensemble.combine.return_value = pd.DataFrame(
+            {
+                "prediction": [50.0],
+                "lower": [35.0],
+                "upper": [65.0],
+                "uncertainty": [30.0],
+                "model_agreement": [0.8],
+            },
+            index=[ts],
+        )
 
-        with patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline):
-            with patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble):
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, ["temperature_2m"],
-                    zone_cfg, label="test_extreme",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline),
+            patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble),
+        ):
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                ["temperature_2m"],
+                zone_cfg,
+                label="test_extreme",
+            )
 
         assert results[ts]["extreme_high"] == 65.0
         assert results[ts]["extreme_low"] == 35.0
@@ -1337,16 +1378,16 @@ class TestRunForecastWorker:
         timestamps = pd.DatetimeIndex([ts])
         weather_df = pd.DataFrame({"temperature_2m": [99.0]}, index=timestamps)
 
-        warmup = pd.DataFrame(
-            {"temperature_2m": [8.0], "Price_EUR_MWh": [50.0]}, index=[ts]
-        )
+        warmup = pd.DataFrame({"temperature_2m": [8.0], "Price_EUR_MWh": [50.0]}, index=[ts])
 
         imputer = SimpleImputer(strategy="mean")
         imputer.fit(pd.DataFrame({"temperature_2m": [10.0]}))
 
         xgb = MagicMock()
         xgb._model_lower = xgb._model_p50 = xgb._model_upper = None
-        xgb.predict.return_value = pd.DataFrame({"prediction": [50.0], "lower": [40.0], "upper": [60.0]}, index=[ts])
+        xgb.predict.return_value = pd.DataFrame(
+            {"prediction": [50.0], "lower": [40.0], "upper": [60.0]}, index=[ts]
+        )
 
         ext_high = MagicMock()
         ext_high._model = None
@@ -1360,18 +1401,33 @@ class TestRunForecastWorker:
         mock_pipeline.transform.return_value = pd.DataFrame({"temperature_2m": [8.0]}, index=[ts])
 
         mock_ensemble = MagicMock()
-        mock_ensemble.combine.return_value = pd.DataFrame({
-            "prediction": [50.0], "lower": [40.0], "upper": [60.0],
-            "uncertainty": [20.0], "model_agreement": [0.9],
-        }, index=[ts])
+        mock_ensemble.combine.return_value = pd.DataFrame(
+            {
+                "prediction": [50.0],
+                "lower": [40.0],
+                "upper": [60.0],
+                "uncertainty": [20.0],
+                "model_agreement": [0.9],
+            },
+            index=[ts],
+        )
 
-        with patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline):
-            with patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble):
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, ["temperature_2m"],
-                    zone_cfg, label="test_known",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline),
+            patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble),
+        ):
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                ["temperature_2m"],
+                zone_cfg,
+                label="test_known",
+            )
 
         assert ts in results
 
@@ -1407,13 +1463,22 @@ class TestRunForecastWorker:
         imputer = SimpleImputer(strategy="mean")
         imputer.fit(pd.DataFrame({"temperature_2m": [10.0]}))
 
-        with patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline):
-            with patch("runeflow.services.inference.ConditionGatedStrategy"):
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, [],
-                    zone_cfg, label="test_empty",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline),
+            patch("runeflow.services.inference.ConditionGatedStrategy"),
+        ):
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                [],
+                zone_cfg,
+                label="test_empty",
+            )
 
         assert len(results) == 0
 
@@ -1445,13 +1510,22 @@ class TestRunForecastWorker:
         imputer = SimpleImputer(strategy="mean")
         imputer.fit(pd.DataFrame({"temperature_2m": [10.0]}))
 
-        with patch("runeflow.services.inference.build_pipeline"):
-            with patch("runeflow.services.inference.ConditionGatedStrategy"):
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, [],
-                    zone_cfg, label="test_skip",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline"),
+            patch("runeflow.services.inference.ConditionGatedStrategy"),
+        ):
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                [],
+                zone_cfg,
+                label="test_skip",
+            )
 
         assert len(results) == 0
 
@@ -1469,7 +1543,9 @@ class TestRunForecastWorker:
         weather_df = pd.DataFrame({"temperature_2m": [10.0]}, index=timestamps)
 
         warmup_idx = pd.date_range("2024-06-15", periods=24, freq="h", tz="UTC")
-        warmup = pd.DataFrame({"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx)
+        warmup = pd.DataFrame(
+            {"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx
+        )
 
         imputer = SimpleImputer(strategy="mean")
         imputer.fit(pd.DataFrame({"temperature_2m": [10.0]}))
@@ -1501,18 +1577,33 @@ class TestRunForecastWorker:
             {"temperature_2m": [10.0]}, index=timestamps
         )
         mock_ensemble = MagicMock()
-        mock_ensemble.combine.return_value = pd.DataFrame({
-            "prediction": [50.0], "lower": [40.0], "upper": [60.0],
-            "uncertainty": [20.0], "model_agreement": [0.9],
-        }, index=[ts])
+        mock_ensemble.combine.return_value = pd.DataFrame(
+            {
+                "prediction": [50.0],
+                "lower": [40.0],
+                "upper": [60.0],
+                "uncertainty": [20.0],
+                "model_agreement": [0.9],
+            },
+            index=[ts],
+        )
 
-        with patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline):
-            with patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble):
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, ["temperature_2m"],
-                    zone_cfg, label="test_setparams",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline),
+            patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble),
+        ):
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                ["temperature_2m"],
+                zone_cfg,
+                label="test_setparams",
+            )
 
         inner_model_lower.set_params.assert_called_once_with(nthread=1)
         inner_model_p50.set_params.assert_called_once_with(nthread=1)
@@ -1535,7 +1626,9 @@ class TestRunForecastWorker:
         weather_df = pd.DataFrame({"temperature_2m": [10.0]}, index=timestamps)
 
         warmup_idx = pd.date_range("2024-06-15", periods=24, freq="h", tz="UTC")
-        warmup = pd.DataFrame({"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx)
+        warmup = pd.DataFrame(
+            {"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx
+        )
 
         imputer = SimpleImputer(strategy="mean")
         imputer.fit(pd.DataFrame({"temperature_2m": [10.0]}))
@@ -1551,26 +1644,47 @@ class TestRunForecastWorker:
         xgb.predict.return_value = pd.DataFrame(
             {"prediction": [50.0], "lower": [40.0], "upper": [60.0]}, index=[ts]
         )
-        ext_high = MagicMock(); ext_high._model = None; ext_high.is_trained = False
-        ext_low = MagicMock(); ext_low._model = None; ext_low.is_trained = False
+        ext_high = MagicMock()
+        ext_high._model = None
+        ext_high.is_trained = False
+        ext_low = MagicMock()
+        ext_low._model = None
+        ext_low.is_trained = False
         zone_cfg = MagicMock()
 
         mock_pipeline = MagicMock()
-        mock_pipeline.transform.return_value = pd.DataFrame({"temperature_2m": [10.0]}, index=timestamps)
+        mock_pipeline.transform.return_value = pd.DataFrame(
+            {"temperature_2m": [10.0]}, index=timestamps
+        )
         mock_ensemble = MagicMock()
-        mock_ensemble.combine.return_value = pd.DataFrame({
-            "prediction": [50.0], "lower": [40.0], "upper": [60.0],
-            "uncertainty": [20.0], "model_agreement": [0.9],
-        }, index=[ts])
+        mock_ensemble.combine.return_value = pd.DataFrame(
+            {
+                "prediction": [50.0],
+                "lower": [40.0],
+                "upper": [60.0],
+                "uncertainty": [20.0],
+                "model_agreement": [0.9],
+            },
+            index=[ts],
+        )
 
-        with patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline):
-            with patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble):
-                # Should NOT raise despite set_params failing
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, ["temperature_2m"],
-                    zone_cfg, label="test_setparams_exc",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline),
+            patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble),
+        ):
+            # Should NOT raise despite set_params failing
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                ["temperature_2m"],
+                zone_cfg,
+                label="test_setparams_exc",
+            )
 
         assert ts in results
 
@@ -1588,11 +1702,13 @@ class TestRunForecastWorker:
         # tz-NAIVE weather_df → triggers tz_localize (line 95)
         weather_df = pd.DataFrame(
             {"temperature_2m": [10.0]},
-            index=pd.DatetimeIndex([pd.Timestamp("2024-07-01T00:00:00")])  # no tz
+            index=pd.DatetimeIndex([pd.Timestamp("2024-07-01T00:00:00")]),  # no tz
         )
 
         warmup_idx = pd.date_range("2024-06-15", periods=24, freq="h", tz="UTC")
-        warmup = pd.DataFrame({"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx)
+        warmup = pd.DataFrame(
+            {"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx
+        )
 
         imputer = SimpleImputer(strategy="mean")
         imputer.fit(pd.DataFrame({"temperature_2m": [10.0]}))
@@ -1602,25 +1718,46 @@ class TestRunForecastWorker:
         xgb.predict.return_value = pd.DataFrame(
             {"prediction": [50.0], "lower": [40.0], "upper": [60.0]}, index=[ts]
         )
-        ext_high = MagicMock(); ext_high._model = None; ext_high.is_trained = False
-        ext_low = MagicMock(); ext_low._model = None; ext_low.is_trained = False
+        ext_high = MagicMock()
+        ext_high._model = None
+        ext_high.is_trained = False
+        ext_low = MagicMock()
+        ext_low._model = None
+        ext_low.is_trained = False
         zone_cfg = MagicMock()
 
         mock_pipeline = MagicMock()
-        mock_pipeline.transform.return_value = pd.DataFrame({"temperature_2m": [10.0]}, index=timestamps)
+        mock_pipeline.transform.return_value = pd.DataFrame(
+            {"temperature_2m": [10.0]}, index=timestamps
+        )
         mock_ensemble = MagicMock()
-        mock_ensemble.combine.return_value = pd.DataFrame({
-            "prediction": [50.0], "lower": [40.0], "upper": [60.0],
-            "uncertainty": [20.0], "model_agreement": [0.9],
-        }, index=[ts])
+        mock_ensemble.combine.return_value = pd.DataFrame(
+            {
+                "prediction": [50.0],
+                "lower": [40.0],
+                "upper": [60.0],
+                "uncertainty": [20.0],
+                "model_agreement": [0.9],
+            },
+            index=[ts],
+        )
 
-        with patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline):
-            with patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble):
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, ["temperature_2m"],
-                    zone_cfg, label="test_tz",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline),
+            patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble),
+        ):
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                ["temperature_2m"],
+                zone_cfg,
+                label="test_tz",
+            )
 
         assert ts in results
 
@@ -1639,24 +1776,34 @@ class TestRunForecastWorker:
         weather_df = pd.DataFrame({"temperature_2m": [10.0]}, index=timestamps)
 
         warmup_idx = pd.date_range("2024-06-15", periods=24, freq="h", tz="UTC")
-        warmup = pd.DataFrame({"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx)
+        warmup = pd.DataFrame(
+            {"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24}, index=warmup_idx
+        )
 
         features_list = ["temperature_2m", "wind_speed_10m", "extra_feature"]
 
         imputer = SimpleImputer(strategy="mean")
-        imputer.fit(pd.DataFrame({
-            "temperature_2m": [10.0, 12.0],
-            "wind_speed_10m": [5.0, 6.0],
-            "extra_feature": [1.0, 2.0],
-        }))
+        imputer.fit(
+            pd.DataFrame(
+                {
+                    "temperature_2m": [10.0, 12.0],
+                    "wind_speed_10m": [5.0, 6.0],
+                    "extra_feature": [1.0, 2.0],
+                }
+            )
+        )
 
         xgb = MagicMock()
         xgb._model_lower = xgb._model_p50 = xgb._model_upper = None
         xgb.predict.return_value = pd.DataFrame(
             {"prediction": [50.0], "lower": [40.0], "upper": [60.0]}, index=[ts]
         )
-        ext_high = MagicMock(); ext_high._model = None; ext_high.is_trained = False
-        ext_low = MagicMock(); ext_low._model = None; ext_low.is_trained = False
+        ext_high = MagicMock()
+        ext_high._model = None
+        ext_high.is_trained = False
+        ext_low = MagicMock()
+        ext_low._model = None
+        ext_low.is_trained = False
         zone_cfg = MagicMock()
 
         other_ts = pd.Timestamp("2024-06-30T23:00:00", tz="UTC")
@@ -1667,18 +1814,33 @@ class TestRunForecastWorker:
         )
 
         mock_ensemble = MagicMock()
-        mock_ensemble.combine.return_value = pd.DataFrame({
-            "prediction": [50.0], "lower": [40.0], "upper": [60.0],
-            "uncertainty": [20.0], "model_agreement": [0.9],
-        }, index=[ts])
+        mock_ensemble.combine.return_value = pd.DataFrame(
+            {
+                "prediction": [50.0],
+                "lower": [40.0],
+                "upper": [60.0],
+                "uncertainty": [20.0],
+                "model_agreement": [0.9],
+            },
+            index=[ts],
+        )
 
-        with patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline):
-            with patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble):
-                results = _run_forecast_worker(
-                    weather_df, warmup, timestamps,
-                    xgb, ext_high, ext_low, imputer, features_list,
-                    zone_cfg, label="test_missing",
-                )
+        with (
+            patch("runeflow.services.inference.build_pipeline", return_value=mock_pipeline),
+            patch("runeflow.services.inference.ConditionGatedStrategy", return_value=mock_ensemble),
+        ):
+            results = _run_forecast_worker(
+                weather_df,
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                features_list,
+                zone_cfg,
+                label="test_missing",
+            )
 
         assert ts in results
 
@@ -1704,9 +1866,12 @@ class TestInferenceServiceRun:
 
         svc = self._make_service()
 
-        xgb = MagicMock(); xgb.is_trained = True
-        ext_high = MagicMock(); ext_high.is_trained = False
-        ext_low = MagicMock(); ext_low.is_trained = False
+        xgb = MagicMock()
+        xgb.is_trained = True
+        ext_high = MagicMock()
+        ext_high.is_trained = False
+        ext_low = MagicMock()
+        ext_low.is_trained = False
         imputer = MagicMock()
         features = ["temperature_2m"]
         svc._store.load_warmup_cache.return_value = pd.DataFrame(
@@ -1715,7 +1880,10 @@ class TestInferenceServiceRun:
         )
 
         det_weather = MagicMock()
-        det_weather.df = pd.DataFrame({"temperature_2m": [10.0]}, index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"))
+        det_weather.df = pd.DataFrame(
+            {"temperature_2m": [10.0]},
+            index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"),
+        )
         det_weather.source = "test"
         det_weather.locations = []
         det_weather.fetched_at = pd.Timestamp.now("UTC")
@@ -1726,18 +1894,29 @@ class TestInferenceServiceRun:
         ts = pd.Timestamp.now("UTC").floor("h")
         worker_result = {
             ts: {
-                "prediction": 50.0, "lower": 40.0, "upper": 60.0,
-                "uncertainty": 20.0, "model_agreement": 0.9,
-                "lower_static": 38.0, "upper_static": 62.0,
-                "xgboost_p50": 50.0, "xgboost_p10": 40.0, "xgboost_p90": 60.0,
-                "extreme_high": None, "extreme_low": None,
+                "prediction": 50.0,
+                "lower": 40.0,
+                "upper": 60.0,
+                "uncertainty": 20.0,
+                "model_agreement": 0.9,
+                "lower_static": 38.0,
+                "upper_static": 62.0,
+                "xgboost_p50": 50.0,
+                "xgboost_p10": 40.0,
+                "xgboost_p90": 60.0,
+                "extreme_high": None,
+                "extreme_low": None,
             }
         }
 
-        with patch.object(svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)):
-            with patch.object(svc, "_load_supplemental_forecast", return_value=None):
-                with patch("runeflow.services.inference._run_forecast_worker", return_value=worker_result):
-                    result = svc.run()
+        with (
+            patch.object(
+                svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)
+            ),
+            patch.object(svc, "_load_supplemental_forecast", return_value=None),
+            patch("runeflow.services.inference._run_forecast_worker", return_value=worker_result),
+        ):
+            result = svc.run()
 
         assert result.zone == "NL"
         assert len(result.points) > 0
@@ -1748,9 +1927,12 @@ class TestInferenceServiceRun:
 
         svc = self._make_service()
 
-        xgb = MagicMock(); xgb.is_trained = True
-        ext_high = MagicMock(); ext_high.is_trained = True
-        ext_low = MagicMock(); ext_low.is_trained = True
+        xgb = MagicMock()
+        xgb.is_trained = True
+        ext_high = MagicMock()
+        ext_high.is_trained = True
+        ext_low = MagicMock()
+        ext_low.is_trained = True
         imputer = MagicMock()
         features = ["temperature_2m"]
         svc._store.load_warmup_cache.return_value = pd.DataFrame(
@@ -1759,39 +1941,56 @@ class TestInferenceServiceRun:
         )
 
         det_weather = MagicMock()
-        det_weather.df = pd.DataFrame({"temperature_2m": [10.0]}, index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"))
+        det_weather.df = pd.DataFrame(
+            {"temperature_2m": [10.0]},
+            index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"),
+        )
         det_weather.source = "test"
         det_weather.locations = []
         det_weather.fetched_at = pd.Timestamp.now("UTC")
         svc._weather_port.download_forecast.return_value = det_weather
 
         ens_member = MagicMock()
-        ens_member.df = pd.DataFrame({"temperature_2m": [11.0]}, index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"))
+        ens_member.df = pd.DataFrame(
+            {"temperature_2m": [11.0]},
+            index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"),
+        )
         svc._weather_port.download_ensemble_forecast.return_value = [ens_member] * 3
 
         ned_df = pd.DataFrame(
             {"ned_forecast_kwh": [1000.0]},
-            index=pd.DatetimeIndex([pd.Timestamp("2024-07-01", tz="UTC")])
+            index=pd.DatetimeIndex([pd.Timestamp("2024-07-01", tz="UTC")]),
         )
 
         ts = pd.Timestamp.now("UTC").floor("h")
         worker_result = {
             ts: {
-                "prediction": 50.0, "lower": 40.0, "upper": 60.0,
-                "uncertainty": 20.0, "model_agreement": 0.9,
-                "lower_static": 38.0, "upper_static": 62.0,
-                "xgboost_p50": 50.0, "xgboost_p10": 40.0, "xgboost_p90": 60.0,
-                "extreme_high": 65.0, "extreme_low": 35.0,
+                "prediction": 50.0,
+                "lower": 40.0,
+                "upper": 60.0,
+                "uncertainty": 20.0,
+                "model_agreement": 0.9,
+                "lower_static": 38.0,
+                "upper_static": 62.0,
+                "xgboost_p50": 50.0,
+                "xgboost_p10": 40.0,
+                "xgboost_p90": 60.0,
+                "extreme_high": 65.0,
+                "extreme_low": 35.0,
             }
         }
 
-        with patch.object(svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)):
-            with patch.object(svc, "_load_supplemental_forecast", return_value=ned_df):
-                with patch("runeflow.services.inference._run_forecast_worker", return_value=worker_result):
-                    with patch("runeflow.services.inference.joblib") as mock_joblib:
-                        mock_joblib.Parallel.return_value = lambda gen: list(gen)
-                        mock_joblib.delayed = lambda f: f
-                        result = svc.run()
+        with (
+            patch.object(
+                svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)
+            ),
+            patch.object(svc, "_load_supplemental_forecast", return_value=ned_df),
+            patch("runeflow.services.inference._run_forecast_worker", return_value=worker_result),
+            patch("runeflow.services.inference.joblib") as mock_joblib,
+        ):
+            mock_joblib.Parallel.return_value = lambda gen: list(gen)
+            mock_joblib.delayed = lambda f: f
+            result = svc.run()
 
         assert result.zone == "NL"
         assert len(result.points) > 0
@@ -1802,17 +2001,24 @@ class TestInferenceServiceRun:
 
         svc = self._make_service()
 
-        xgb = MagicMock(); xgb.is_trained = True
-        ext_high = MagicMock(); ext_high.is_trained = False
-        ext_low = MagicMock(); ext_low.is_trained = False
+        xgb = MagicMock()
+        xgb.is_trained = True
+        ext_high = MagicMock()
+        ext_high.is_trained = False
+        ext_low = MagicMock()
+        ext_low.is_trained = False
         imputer = MagicMock()
         features = []
 
         svc._store.load_warmup_cache.return_value = None
 
-        with patch.object(svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)):
-            with pytest.raises(RuntimeError, match="No warmup cache"):
-                svc.run()
+        with (
+            patch.object(
+                svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)
+            ),
+            pytest.raises(RuntimeError, match="No warmup cache"),
+        ):
+            svc.run()
 
 
 class TestInferenceSupplementalTzConvert:

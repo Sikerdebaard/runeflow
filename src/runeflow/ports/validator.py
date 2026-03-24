@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """DataValidator — abstract interface for data quality checks."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

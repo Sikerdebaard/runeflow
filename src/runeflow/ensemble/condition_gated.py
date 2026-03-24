@@ -9,6 +9,7 @@ Combines XGBoostQuantileModel (P50 + P1/P99 intervals) with
 ExtremeHigh / ExtremeLow models based on the time-of-day condition
 detected from feature columns in the input DataFrame.
 """
+
 from __future__ import annotations
 
 import logging
@@ -107,7 +108,8 @@ class ConditionGatedStrategy(EnsembleStrategy):
         ext_high_arr = ext_high["prediction"].to_numpy() if ext_high is not None else p50
         ext_low_arr = ext_low["prediction"].to_numpy() if ext_low is not None else p50
         ext_pred = np.where(
-            is_spike, ext_high_arr,
+            is_spike,
+            ext_high_arr,
             np.where(is_dip, ext_low_arr, p50),
         )
 

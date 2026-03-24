@@ -3,17 +3,18 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """NED (NL) supplemental data adapter — historical utilization + 9-day forecast."""
+
 from __future__ import annotations
 
 import datetime
 import time
-from datetime import datetime as dt, timedelta
+from datetime import datetime as dt
+from datetime import timedelta
 
 import pandas as pd
 import requests
-from loguru import logger
 
-from runeflow.exceptions import AuthenticationError, DataUnavailableError, DownloadError
+from runeflow.exceptions import AuthenticationError, DownloadError
 from runeflow.ports.supplemental import SupplementalDataPort
 
 _BASE_URL = "https://api.ned.nl/v1/utilizations"
@@ -34,9 +35,7 @@ class NedAdapter(SupplementalDataPort):
 
     # ── SupplementalDataPort interface ────────────────────────────────────────
 
-    def download(
-        self, zone: str, start: datetime.date, end: datetime.date
-    ) -> pd.DataFrame | None:
+    def download(self, zone: str, start: datetime.date, end: datetime.date) -> pd.DataFrame | None:
         if not self.supports_zone(zone):
             return None
         data = self._download_historical(start, end)
@@ -63,9 +62,7 @@ class NedAdapter(SupplementalDataPort):
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _download_historical(
-        self, start: datetime.date, end: datetime.date
-    ) -> pd.DataFrame | None:
+    def _download_historical(self, start: datetime.date, end: datetime.date) -> pd.DataFrame | None:
         """Download historical hourly utilization, paged monthly."""
         start_dt = dt(start.year, start.month, start.day)
         end_dt = dt(end.year, end.month, end.day, 23, 59, 59)
@@ -85,7 +82,10 @@ class NedAdapter(SupplementalDataPort):
             }
             try:
                 resp = requests.get(
-                    _BASE_URL, headers=self._headers, params=params, timeout=30
+                    _BASE_URL,
+                    headers=self._headers,
+                    params=params,  # type: ignore[arg-type]
+                    timeout=30,
                 )
                 resp.raise_for_status()
                 records = resp.json().get("hydra:member", [])
@@ -125,7 +125,10 @@ class NedAdapter(SupplementalDataPort):
         }
         try:
             resp = requests.get(
-                _BASE_URL, headers=self._headers, params=params, timeout=30
+                _BASE_URL,
+                headers=self._headers,
+                params=params,  # type: ignore[arg-type]
+                timeout=30,
             )
             resp.raise_for_status()
             data = resp.json().get("hydra:member", [])
@@ -137,17 +140,15 @@ class NedAdapter(SupplementalDataPort):
         df = pd.DataFrame(data)
         df["validfrom"] = pd.to_datetime(df["validfrom"])
         df = df.sort_values("validfrom").reset_index(drop=True)
-        df["forecast_kWh"] = pd.to_numeric(df.get("volume"), errors="coerce")
+        df["forecast_kWh"] = pd.to_numeric(df.get("volume"), errors="coerce")  # type: ignore[call-overload]
         return df[["validfrom", "forecast_kWh"]]
 
     @staticmethod
-    def _month_chunks(
-        start: dt, end: dt
-    ) -> list[tuple[dt, dt]]:
+    def _month_chunks(start: dt, end: dt) -> list[tuple[dt, dt]]:
         chunks = []
         cur = dt(start.year, start.month, 1)
         while cur < end:
-            if cur.month == 12:
+            if cur.month == 12:  # noqa: SIM108
                 nxt = dt(cur.year + 1, 1, 1)
             else:
                 nxt = dt(cur.year, cur.month + 1, 1)

@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Training artifact domain types."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,7 +18,7 @@ class TrainResult:
 
     zone: str
     features: tuple[str, ...]
-    metrics: dict[str, float]        # MAE, R², spike_mae, dip_mae, coverage
+    metrics: dict[str, float]  # MAE, R², spike_mae, dip_mae, coverage
     quality_assessment: dict[str, Any]
     trained_at: pd.Timestamp
     model_version: str

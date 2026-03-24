@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Germany-Luxembourg (DE_LU) zone definition."""
+
 from __future__ import annotations
 
 from runeflow.domain.weather import WeatherLocation
@@ -15,9 +16,7 @@ DE_LU = ZoneConfig(
     name="Germany-Luxembourg",
     timezone="Europe/Berlin",
     workalendar_country="DE",
-    primary_weather_location=WeatherLocation(
-        "germany_central", 51.1657, 10.4515, "primary"
-    ),
+    primary_weather_location=WeatherLocation("germany_central", 51.1657, 10.4515, "primary"),
     weather_locations=(
         WeatherLocation("germany_central", 51.1657, 10.4515, "primary"),
         WeatherLocation("lower_saxony", 52.6367, 9.8508, "wind"),
@@ -28,7 +27,7 @@ DE_LU = ZoneConfig(
         WeatherLocation("grand_est", 48.6833, 6.1833, "nuclear"),
     ),
     installed_solar_capacity_mw=65000.0,  # ~65 GW
-    installed_wind_capacity_mw=60000.0,   # ~60 GW onshore + offshore
+    installed_wind_capacity_mw=60000.0,  # ~60 GW onshore + offshore
     typical_load_mw=55000.0,
     neighbors=(
         NeighborZone(
@@ -42,9 +41,7 @@ DE_LU = ZoneConfig(
         NeighborZone(
             zone="NL",
             purpose="demand_coupling",
-            weather_locations=(
-                WeatherLocation("de_bilt", 52.1009, 5.1762, "primary"),
-            ),
+            weather_locations=(WeatherLocation("de_bilt", 52.1009, 5.1762, "primary"),),
         ),
     ),
     has_energyzero=False,

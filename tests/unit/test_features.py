@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Tests for feature engineering groups and the FeaturePipeline."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -10,18 +11,18 @@ import pandas as pd
 import pytest
 
 from runeflow.features.base import FeaturePipeline
-from runeflow.features.registry import FEATURE_REGISTRY, build_pipeline
-from runeflow.features.temporal import TemporalFeatures
+from runeflow.features.precipitation import PrecipitationFeatures
 from runeflow.features.price_lag import PriceLagFeatures
 from runeflow.features.price_regime import PriceRegimeFeatures
+from runeflow.features.registry import FEATURE_REGISTRY, build_pipeline
 from runeflow.features.spike import SpikeMomentumFeatures, SpikeRiskFeatures
 from runeflow.features.temperature import TemperatureFeatures
+from runeflow.features.temporal import TemporalFeatures
 from runeflow.features.wind import WindFeatures
-from runeflow.features.precipitation import PrecipitationFeatures
 from runeflow.zones.registry import ZoneRegistry
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _make_df(n: int = 24 * 30, with_weather: bool = True) -> pd.DataFrame:
     """Return a minimal DataFrame suitable for most feature groups."""
@@ -35,9 +36,7 @@ def _make_df(n: int = 24 * 30, with_weather: bool = True) -> pd.DataFrame:
             {
                 "temperature_2m": 10.0 + 5.0 * rng.standard_normal(n),
                 "wind_speed_10m": np.abs(6.0 + 3.0 * rng.standard_normal(n)),
-                "shortwave_radiation": np.clip(
-                    150.0 + 120.0 * rng.standard_normal(n), 0, None
-                ),
+                "shortwave_radiation": np.clip(150.0 + 120.0 * rng.standard_normal(n), 0, None),
                 "cloudcover": np.clip(40.0 + 30.0 * rng.standard_normal(n), 0, 100),
                 "precipitation": np.clip(rng.exponential(0.2, n), 0, None),
             }
@@ -46,6 +45,7 @@ def _make_df(n: int = 24 * 30, with_weather: bool = True) -> pd.DataFrame:
 
 
 # ── TemporalFeatures ─────────────────────────────────────────────────────────
+
 
 class TestTemporalFeatures:
     def test_produces_hour_of_day(self, zone_cfg_nl):
@@ -97,6 +97,7 @@ class TestTemporalFeatures:
 
 # ── PriceLagFeatures ─────────────────────────────────────────────────────────
 
+
 class TestPriceLagFeatures:
     def test_produces_lag_24(self, zone_cfg_nl):
         df = _make_df()
@@ -107,9 +108,7 @@ class TestPriceLagFeatures:
         df = _make_df()
         out = PriceLagFeatures().transform(df, zone_cfg_nl)
         # lag_24 at index 24 should equal Price_EUR_MWh at index 0
-        assert out["Price_EUR_MWh_lag_24"].iloc[24] == pytest.approx(
-            df["Price_EUR_MWh"].iloc[0]
-        )
+        assert out["Price_EUR_MWh_lag_24"].iloc[24] == pytest.approx(df["Price_EUR_MWh"].iloc[0])
 
     def test_rolling_mean_present(self, zone_cfg_nl):
         df = _make_df()
@@ -138,6 +137,7 @@ class TestPriceLagFeatures:
 
 # ── SpikeMomentumFeatures ─────────────────────────────────────────────────────
 
+
 class TestSpikeMomentumFeatures:
     def test_produces_zscore(self, zone_cfg_nl):
         df = _make_df()
@@ -159,6 +159,7 @@ class TestSpikeMomentumFeatures:
 
 # ── SpikeRiskFeatures ─────────────────────────────────────────────────────────
 
+
 class TestSpikeRiskFeatures:
     def test_produces_hours_since_last_spike(self, zone_cfg_nl):
         df = _make_df()
@@ -173,6 +174,7 @@ class TestSpikeRiskFeatures:
     def test_no_python_loop(self, zone_cfg_nl):
         """Verify the transform runs in reasonable time (vectorised path)."""
         import time
+
         df = _make_df(n=24 * 365)
         start = time.monotonic()
         SpikeRiskFeatures().transform(df, zone_cfg_nl)
@@ -181,6 +183,7 @@ class TestSpikeRiskFeatures:
 
 
 # ── TemperatureFeatures ──────────────────────────────────────────────────────
+
 
 class TestTemperatureFeatures:
     def test_produces_hdd(self, zone_cfg_nl):
@@ -214,6 +217,7 @@ class TestTemperatureFeatures:
 
 # ── WindFeatures ─────────────────────────────────────────────────────────────
 
+
 class TestWindFeatures:
     def test_produces_wind_power_potential(self, zone_cfg_nl):
         df = _make_df()
@@ -228,6 +232,7 @@ class TestWindFeatures:
 
 # ── PrecipitationFeatures ─────────────────────────────────────────────────────
 
+
 class TestPrecipitationFeatures:
     def test_produces_accumulated(self, zone_cfg_nl):
         df = _make_df()
@@ -238,6 +243,7 @@ class TestPrecipitationFeatures:
 
 
 # ── FeaturePipeline ───────────────────────────────────────────────────────────
+
 
 class TestFeaturePipeline:
     def test_no_mutation_of_input(self, zone_cfg_nl):
@@ -290,6 +296,7 @@ class TestFeaturePipeline:
 
 # ── Feature Registry ──────────────────────────────────────────────────────────
 
+
 class TestFeatureRegistry:
     def test_all_registry_keys_are_valid_names(self):
         """Registry keys should match the class's name attribute."""
@@ -308,12 +315,11 @@ class TestFeatureRegistry:
         # spike_momentum, spike_risk, temperature, wind, precipitation, cloud,
         # renewable_pressure, residual_load, cross_border, duck_curve, market_structure,
         # generation, interaction
-        assert len(FEATURE_REGISTRY) >= 19, (
-            f"Expected ≥19 groups, got {len(FEATURE_REGISTRY)}"
-        )
+        assert len(FEATURE_REGISTRY) >= 19, f"Expected ≥19 groups, got {len(FEATURE_REGISTRY)}"
 
 
 # ── FeaturePipeline extra ────────────────────────────────────────────────────
+
 
 class TestFeaturePipelineGroups:
     def test_groups_property_returns_list(self, zone_cfg_nl):
@@ -332,9 +338,11 @@ class TestFeaturePipelineGroups:
 
 # ── GenerationForecastFeatures ────────────────────────────────────────────────
 
+
 class TestGenerationForecastFeatures:
     def test_no_gen_cols_returns_unchanged(self, zone_cfg_nl):
         from runeflow.features.generation import GenerationForecastFeatures
+
         df = _make_df()
         out = GenerationForecastFeatures().transform(df, zone_cfg_nl)
         # No gen columns present — should return df unchanged
@@ -342,6 +350,7 @@ class TestGenerationForecastFeatures:
 
     def test_with_load_forecast_mw(self, zone_cfg_nl):
         from runeflow.features.generation import GenerationForecastFeatures
+
         n = 24 * 10
         df = _make_df(n)
         df["load_forecast_mw"] = 12000.0
@@ -351,6 +360,7 @@ class TestGenerationForecastFeatures:
 
     def test_with_wind_forecast_col(self, zone_cfg_nl):
         from runeflow.features.generation import GenerationForecastFeatures
+
         n = 24 * 5
         df = _make_df(n)
         df["wind_forecast_mw"] = 3000.0
@@ -362,6 +372,7 @@ class TestGenerationForecastFeatures:
 
     def test_forecast_renewable_change_computed(self, zone_cfg_nl):
         from runeflow.features.generation import GenerationForecastFeatures
+
         n = 24 * 5
         df = _make_df(n)
         df["wind_forecast_mw"] = np.linspace(2000, 4000, n)
@@ -370,6 +381,7 @@ class TestGenerationForecastFeatures:
 
     def test_no_mutation(self, zone_cfg_nl):
         from runeflow.features.generation import GenerationForecastFeatures
+
         n = 24 * 5
         df = _make_df(n)
         df["load_forecast_mw"] = 12000.0
@@ -379,6 +391,7 @@ class TestGenerationForecastFeatures:
 
 
 # ── CrossBorderFeatures ──────────────────────────────────────────────────────
+
 
 class TestCrossBorderFeatures:
     def _make_wind_df(self, n: int = 24 * 20) -> pd.DataFrame:
@@ -398,12 +411,14 @@ class TestCrossBorderFeatures:
 
     def test_no_wind_cols_returns_unchanged(self, zone_cfg_nl):
         from runeflow.features.cross_border import CrossBorderFeatures
+
         df = _make_df()
         out = CrossBorderFeatures().transform(df, zone_cfg_nl)
         assert "german_wind_power_index" not in out.columns
 
     def test_with_wind_cols_creates_index(self, zone_cfg_nl):
         from runeflow.features.cross_border import CrossBorderFeatures
+
         df = self._make_wind_df()
         out = CrossBorderFeatures().transform(df, zone_cfg_nl)
         assert "german_wind_power_index" in out.columns
@@ -411,6 +426,7 @@ class TestCrossBorderFeatures:
 
     def test_wind_drought_is_binary(self, zone_cfg_nl):
         from runeflow.features.cross_border import CrossBorderFeatures
+
         df = self._make_wind_df()
         out = CrossBorderFeatures().transform(df, zone_cfg_nl)
         drought = out["german_wind_drought"].dropna()
@@ -418,12 +434,14 @@ class TestCrossBorderFeatures:
 
     def test_interconnector_stress_non_negative(self, zone_cfg_nl):
         from runeflow.features.cross_border import CrossBorderFeatures
+
         df = self._make_wind_df()
         out = CrossBorderFeatures().transform(df, zone_cfg_nl)
         assert (out["interconnector_stress_proxy"].dropna() >= 0).all()
 
     def test_with_france_temperature(self, zone_cfg_nl):
         from runeflow.features.cross_border import CrossBorderFeatures
+
         n = 24 * 5
         idx = pd.date_range("2024-08-01", periods=n, freq="h", tz="UTC")
         df = pd.DataFrame(
@@ -442,12 +460,14 @@ class TestCrossBorderFeatures:
 
     def test_no_france_cols_no_cooling_risk(self, zone_cfg_nl):
         from runeflow.features.cross_border import CrossBorderFeatures
+
         df = self._make_wind_df()
         out = CrossBorderFeatures().transform(df, zone_cfg_nl)
         assert "french_nuclear_cooling_risk" not in out.columns
 
 
 # ── ResidualLoadFeatures ─────────────────────────────────────────────────────
+
 
 class TestResidualLoadFeatures:
     def _make_ned_df(self, n: int = 24 * 10) -> pd.DataFrame:
@@ -466,12 +486,14 @@ class TestResidualLoadFeatures:
 
     def test_no_ned_returns_unchanged(self, zone_cfg_nl):
         from runeflow.features.residual_load import ResidualLoadFeatures
+
         df = _make_df()
         out = ResidualLoadFeatures().transform(df, zone_cfg_nl)
         assert "residual_load_mw" not in out.columns
 
     def test_with_ned_creates_residual_load(self, zone_cfg_nl):
         from runeflow.features.residual_load import ResidualLoadFeatures
+
         df = self._make_ned_df()
         out = ResidualLoadFeatures().transform(df, zone_cfg_nl)
         assert "residual_load_mw" in out.columns
@@ -479,6 +501,7 @@ class TestResidualLoadFeatures:
 
     def test_with_ned_no_wind_potential(self, zone_cfg_nl):
         from runeflow.features.residual_load import ResidualLoadFeatures
+
         df = self._make_ned_df()
         df.drop(columns=["wind_power_potential"], inplace=True)
         out = ResidualLoadFeatures().transform(df, zone_cfg_nl)
@@ -487,6 +510,7 @@ class TestResidualLoadFeatures:
 
     def test_no_mutation(self, zone_cfg_nl):
         from runeflow.features.residual_load import ResidualLoadFeatures
+
         df = self._make_ned_df()
         cols_before = set(df.columns)
         ResidualLoadFeatures().transform(df, zone_cfg_nl)
@@ -494,26 +518,33 @@ class TestResidualLoadFeatures:
 
     def test_only_ned_no_solar_returns_unchanged(self, zone_cfg_nl):
         from runeflow.features.residual_load import ResidualLoadFeatures
+
         n = 24 * 5
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
-        df = pd.DataFrame({
-            "ned_utilization_kwh": np.ones(n) * 12_000_000,
-        }, index=idx)
+        df = pd.DataFrame(
+            {
+                "ned_utilization_kwh": np.ones(n) * 12_000_000,
+            },
+            index=idx,
+        )
         out = ResidualLoadFeatures().transform(df, zone_cfg_nl)
         assert "residual_load_mw" not in out.columns
 
 
 # ── SolarPositionFeatures ────────────────────────────────────────────────────
 
+
 class TestSolarPositionFeatures:
     def test_produces_zenith(self, zone_cfg_nl):
         from runeflow.features.solar import SolarPositionFeatures
+
         df = _make_df(n=24 * 2)
         out = SolarPositionFeatures().transform(df, zone_cfg_nl)
         assert "solar_zenith" in out.columns
 
     def test_produces_all_declared(self, zone_cfg_nl):
         from runeflow.features.solar import SolarPositionFeatures
+
         df = _make_df(n=24 * 2)
         out = SolarPositionFeatures().transform(df, zone_cfg_nl)
         for col in SolarPositionFeatures().produces:
@@ -521,29 +552,34 @@ class TestSolarPositionFeatures:
 
     def test_clear_sky_ghi_non_negative(self, zone_cfg_nl):
         from runeflow.features.solar import SolarPositionFeatures
+
         df = _make_df(n=24 * 2)
         out = SolarPositionFeatures().transform(df, zone_cfg_nl)
         assert (out["clear_sky_ghi"] >= 0).all()
 
     def test_primary_location_branch(self):
         """Covers the wl.name == primary_weather_location.name branch."""
-        from runeflow.features.solar import SolarPositionFeatures
         from runeflow.domain.weather import WeatherLocation
-        from runeflow.zones.config import ZoneConfig, NeighborZone
+        from runeflow.features.solar import SolarPositionFeatures
+        from runeflow.zones.config import ZoneConfig
         from runeflow.zones.tariffs.nl import NL_TARIFF_FORMULAS
 
         # primary is NOT the first location → loop must find it
         loc_a = WeatherLocation("loc_a", 52.0, 5.0, "wind")
         loc_primary = WeatherLocation("de_bilt", 52.1, 5.1, "primary")
         mock_cfg = ZoneConfig(
-            zone="NL", name="Test", timezone="UTC", workalendar_country="NL",
+            zone="NL",
+            name="Test",
+            timezone="UTC",
+            workalendar_country="NL",
             primary_weather_location=loc_primary,
             weather_locations=(loc_a, loc_primary),
             installed_solar_capacity_mw=9000.0,
             installed_wind_capacity_mw=8000.0,
             typical_load_mw=12000.0,
             neighbors=(),
-            has_energyzero=False, has_ned=False,
+            has_energyzero=False,
+            has_ned=False,
             tariff_formulas=NL_TARIFF_FORMULAS,
             feature_groups=("solar_position",),
             models=("xgboost_quantile",),
@@ -557,10 +593,12 @@ class TestSolarPositionFeatures:
 
 # ── SolarPowerFeatures ───────────────────────────────────────────────────────
 
+
 class TestSolarPowerFeaturesExtra:
     def test_with_direct_and_diffuse_radiation(self, zone_cfg_nl):
         """Cover the direct/diffuse ratio branch (lines 87-92) and clear_sky_index."""
         from runeflow.features.solar import SolarPositionFeatures, SolarPowerFeatures
+
         n = 24 * 10
         df = _make_df(n)
         rad = df["shortwave_radiation"]
@@ -575,13 +613,19 @@ class TestSolarPowerFeaturesExtra:
     def test_with_cloud_only_no_radiation(self, zone_cfg_nl):
         """Cover elif cloud_cols branch for clear_sky_index (line 115-116)."""
         from runeflow.features.solar import SolarPositionFeatures, SolarPowerFeatures
+
         n = 24 * 10
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
         # Only cloud cover, no shortwave_radiation
-        df = pd.DataFrame({
-            "Price_EUR_MWh": np.ones(n) * 50,
-            "cloudcover": np.clip(40.0 + 30.0 * np.random.default_rng(7).standard_normal(n), 0, 100),
-        }, index=idx)
+        df = pd.DataFrame(
+            {
+                "Price_EUR_MWh": np.ones(n) * 50,
+                "cloudcover": np.clip(
+                    40.0 + 30.0 * np.random.default_rng(7).standard_normal(n), 0, 100
+                ),
+            },
+            index=idx,
+        )
         df = SolarPositionFeatures().transform(df, zone_cfg_nl)
         out = SolarPowerFeatures().transform(df, zone_cfg_nl)
         assert "clear_sky_index" in out.columns
@@ -589,6 +633,7 @@ class TestSolarPowerFeaturesExtra:
     def test_is_sunny_period_long_series(self, zone_cfg_nl):
         """Cover is_sunny_period computation which needs 168+ rows (line 120)."""
         from runeflow.features.solar import SolarPositionFeatures, SolarPowerFeatures
+
         n = 24 * 10  # 240 rows > 168 min_periods
         df = _make_df(n)
         df = SolarPositionFeatures().transform(df, zone_cfg_nl)
@@ -598,25 +643,32 @@ class TestSolarPowerFeaturesExtra:
 
 # ── Cloud features zero-solar branch ────────────────────────────────────────
 
+
 class TestCloudFeaturesExtra:
     def test_solar_deficit_zero_when_constant_solar(self, zone_cfg_nl):
         """Covers the else branch (solar_deficit = 0) when col_max == 0."""
         from runeflow.features.cloud import CloudRadiationFeatures
+
         n = 24 * 5
         idx = pd.date_range("2024-12-01", periods=n, freq="h", tz="UTC")
-        df = pd.DataFrame({
-            "cloudcover": np.ones(n) * 80.0,
-            "solar_power_output": np.zeros(n),  # all zero → col_max = 0
-        }, index=idx)
+        df = pd.DataFrame(
+            {
+                "cloudcover": np.ones(n) * 80.0,
+                "solar_power_output": np.zeros(n),  # all zero → col_max = 0
+            },
+            index=idx,
+        )
         out = CloudRadiationFeatures().transform(df, zone_cfg_nl)
         assert (out["solar_deficit"] == 0).all()
 
 
 # ── RenewablePressureFeatures extra ─────────────────────────────────────────
 
+
 class TestRenewablePressureExtra:
     def test_no_solar_no_wind_returns_unchanged(self, zone_cfg_nl):
         from runeflow.features.renewable import RenewablePressureFeatures
+
         df = _make_df()
         out = RenewablePressureFeatures().transform(df, zone_cfg_nl)
         assert "renewable_pressure" not in out.columns
@@ -624,21 +676,27 @@ class TestRenewablePressureExtra:
     def test_solar_only_no_wind(self, zone_cfg_nl):
         """Covers the else branch: wind_norm = 0."""
         from runeflow.features.renewable import RenewablePressureFeatures
+
         n = 24 * 10
         idx = pd.date_range("2024-06-01", periods=n, freq="h", tz="UTC")
-        df = pd.DataFrame({
-            "solar_power_output": np.clip(np.random.default_rng(1).random(n), 0, 1),
-        }, index=idx)
+        df = pd.DataFrame(
+            {
+                "solar_power_output": np.clip(np.random.default_rng(1).random(n), 0, 1),
+            },
+            index=idx,
+        )
         out = RenewablePressureFeatures().transform(df, zone_cfg_nl)
         assert "renewable_pressure" in out.columns
 
 
 # ── SimpleWeightedStrategy extra branches ────────────────────────────────────
 
+
 class TestSimpleWeightedStrategyExtra:
     def test_combine_without_xgboost_quantile(self, zone_cfg_nl):
         """Covers the else branch (lines 53-56): no xgboost_quantile in predictions."""
         from runeflow.ensemble.simple_weighted import SimpleWeightedStrategy
+
         n = 10
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
         preds = {
@@ -655,6 +713,7 @@ class TestSimpleWeightedStrategyExtra:
     def test_combine_xgboost_without_lower_col(self, zone_cfg_nl):
         """Covers the 'else combined' branch (line 36) when lower/upper absent."""
         from runeflow.ensemble.simple_weighted import SimpleWeightedStrategy
+
         n = 10
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
         preds = {
@@ -667,6 +726,7 @@ class TestSimpleWeightedStrategyExtra:
 
     def test_combine_empty_raises(self):
         from runeflow.ensemble.simple_weighted import SimpleWeightedStrategy
+
         strategy = SimpleWeightedStrategy()
         with pytest.raises(ValueError, match="No predictions"):
             strategy.combine({}, pd.DataFrame())
@@ -674,11 +734,12 @@ class TestSimpleWeightedStrategyExtra:
 
 # ── HolidayFeatures exception branch ────────────────────────────────────────
 
+
 class TestHolidayFeaturesExtra:
     def test_invalid_country_skips_year(self, zone_cfg_nl, monkeypatch):
         """Covers the except block in holiday transform when a year fails."""
-        from runeflow.features.holiday import HolidayFeatures
         import runeflow.features.holiday as hmod
+        from runeflow.features.holiday import HolidayFeatures
 
         original = hmod.hols.country_holidays
 
@@ -700,10 +761,12 @@ class TestHolidayFeaturesExtra:
 
 # ── MarketStructureFeatures early exit ──────────────────────────────────────
 
+
 class TestMarketStructureFeaturesExtra:
     def test_early_exit_when_no_hour_of_day(self, zone_cfg_nl):
         """Covers the early return (line 29) when required columns absent."""
         from runeflow.features.market import MarketStructureFeatures
+
         n = 24 * 5
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
         df = pd.DataFrame({"Price_EUR_MWh": np.ones(n) * 50}, index=idx)
@@ -713,9 +776,11 @@ class TestMarketStructureFeaturesExtra:
 
 # ── Early-return guards for feature groups ───────────────────────────────────
 
+
 class TestSpikeEarlyReturn:
     def test_spike_features_returns_unchanged_without_price_col(self, zone_cfg_nl):
         from runeflow.features.spike import SpikeMomentumFeatures
+
         idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
         df = pd.DataFrame({"temperature_2m": np.ones(24) * 10.0}, index=idx)
         out = SpikeMomentumFeatures().transform(df, zone_cfg_nl)
@@ -723,6 +788,7 @@ class TestSpikeEarlyReturn:
 
     def test_spike_risk_features_returns_unchanged_without_price_col(self, zone_cfg_nl):
         from runeflow.features.spike import SpikeRiskFeatures
+
         idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
         df = pd.DataFrame({"temperature_2m": np.ones(24) * 10.0}, index=idx)
         out = SpikeRiskFeatures().transform(df, zone_cfg_nl)
@@ -732,6 +798,7 @@ class TestSpikeEarlyReturn:
 class TestInteractionEarlyReturn:
     def test_returns_unchanged_without_is_peak_hour(self, zone_cfg_nl):
         from runeflow.features.interaction import PeakInteractionFeatures
+
         idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
         df = pd.DataFrame({"temperature_2m": np.ones(24) * 12.0}, index=idx)
         out = PeakInteractionFeatures().transform(df, zone_cfg_nl)
@@ -741,6 +808,7 @@ class TestInteractionEarlyReturn:
 class TestDuckCurveEarlyReturn:
     def test_returns_unchanged_without_required_cols(self, zone_cfg_nl):
         from runeflow.features.duck_curve import DuckCurveFeatures
+
         idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
         df = pd.DataFrame({"temperature_2m": np.ones(24) * 12.0}, index=idx)
         out = DuckCurveFeatures().transform(df, zone_cfg_nl)
@@ -750,6 +818,7 @@ class TestDuckCurveEarlyReturn:
 class TestWindEarlyReturn:
     def test_returns_unchanged_without_wind_cols(self, zone_cfg_nl):
         from runeflow.features.wind import WindFeatures
+
         idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
         df = pd.DataFrame({"temperature_2m": np.ones(24) * 12.0}, index=idx)
         out = WindFeatures().transform(df, zone_cfg_nl)
@@ -758,7 +827,6 @@ class TestWindEarlyReturn:
 
 class TestPriceRegimeEarlyReturn:
     def test_returns_unchanged_without_price_col(self, zone_cfg_nl):
-        from runeflow.features.price_regime import PriceRegimeFeatures
         idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
         df = pd.DataFrame({"temperature_2m": np.ones(24) * 12.0}, index=idx)
         out = PriceRegimeFeatures().transform(df, zone_cfg_nl)
@@ -769,6 +837,7 @@ class TestSolarPowerNoRadiationNoCloud:
     def test_else_branch_uses_only_clear_sky_ghi(self, zone_cfg_nl):
         """SolarPowerFeatures else branch (line 92): no radiation cols, no cloud cols."""
         from runeflow.features.solar import SolarPowerFeatures
+
         n = 48
         idx = pd.date_range("2024-06-01", periods=n, freq="h", tz="UTC")
         # Only clear_sky_ghi, no radiation or cloud columns
@@ -781,7 +850,7 @@ class TestSolarPowerNoRadiationNoCloud:
 class TestRegistryUnknownFeatureGroup:
     def test_unknown_group_name_is_skipped(self, zone_cfg_nl, monkeypatch):
         """registry.py line 91: cls is None when group name not in FEATURE_REGISTRY."""
-        from runeflow.features.registry import build_pipeline, FEATURE_REGISTRY
+        from runeflow.features.registry import FEATURE_REGISTRY, build_pipeline
 
         # Temporarily make the 'temporal' entry map to None so the
         # 'if cls is None: continue' branch is hit during pipeline construction.

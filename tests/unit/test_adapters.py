@@ -4,24 +4,25 @@
 
 """Tests for adapters: FallbackPriceAdapter, WeatherSeries, ForecastResult,
 and binder.configure_injector."""
+
 from __future__ import annotations
 
 import datetime
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from runeflow.domain.forecast import ForecastPoint, ForecastResult
 from runeflow.domain.price import PriceRecord, PriceSeries
 from runeflow.domain.weather import WeatherLocation, WeatherRecord, WeatherSeries
-from runeflow.domain.forecast import ForecastPoint, ForecastResult
 from runeflow.exceptions import DataUnavailableError
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _price_series(zone: str = "NL", n: int = 48, offset_hours: int = 0) -> PriceSeries:
     ts = pd.date_range(
@@ -31,11 +32,12 @@ def _price_series(zone: str = "NL", n: int = 48, offset_hours: int = 0) -> Price
         tz="UTC",
     )
     records = tuple(
-        PriceRecord(timestamp=t, price_eur_mwh=float(50 + i % 20))
-        for i, t in enumerate(ts)
+        PriceRecord(timestamp=t, price_eur_mwh=float(50 + i % 20)) for i, t in enumerate(ts)
     )
     return PriceSeries(
-        zone=zone, records=records, source="test",
+        zone=zone,
+        records=records,
+        source="test",
         fetched_at=pd.Timestamp.now("UTC"),
     )
 
@@ -53,6 +55,7 @@ def _mock_price_port(zone: str = "NL", supported: bool = True) -> MagicMock:
 # WeatherLocation
 # ---------------------------------------------------------------------------
 
+
 class TestWeatherLocation:
     def test_basic_fields(self):
         loc = WeatherLocation(name="de_bilt", lat=52.1, lon=5.18, purpose="primary")
@@ -63,13 +66,14 @@ class TestWeatherLocation:
 
     def test_immutable(self):
         loc = WeatherLocation(name="test", lat=0.0, lon=0.0, purpose="wind")
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             loc.lat = 1.0  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
 # WeatherRecord
 # ---------------------------------------------------------------------------
+
 
 class TestWeatherRecord:
     def test_basic_construction(self):
@@ -97,6 +101,7 @@ class TestWeatherRecord:
 # WeatherSeries
 # ---------------------------------------------------------------------------
 
+
 class TestWeatherSeries:
     def _make_frame(self, n: int = 24, prefix: str = "de_bilt") -> pd.DataFrame:
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
@@ -114,9 +119,7 @@ class TestWeatherSeries:
     def test_from_location_frames_multiple(self):
         df1 = self._make_frame()
         df2 = self._make_frame()
-        series = WeatherSeries.from_location_frames(
-            {"loc_a": df1, "loc_b": df2}, source="test"
-        )
+        series = WeatherSeries.from_location_frames({"loc_a": df1, "loc_b": df2}, source="test")
         assert "loc_a" in series.locations
         assert "loc_b" in series.locations
         assert "loc_a_temperature_2m" in series.df.columns
@@ -143,7 +146,9 @@ class TestWeatherSeries:
         idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
         raw = pd.DataFrame({"a": [1, 2, 3, 4, 5]}, index=idx)
         series = WeatherSeries(
-            locations=("loc",), df=raw, source="test",
+            locations=("loc",),
+            df=raw,
+            source="test",
             fetched_at=pd.Timestamp.now("UTC"),
         )
         raw["a"] = 999
@@ -154,6 +159,7 @@ class TestWeatherSeries:
 # ---------------------------------------------------------------------------
 # ForecastResult domain extras
 # ---------------------------------------------------------------------------
+
 
 class TestForecastResult:
     def test_to_dataframe_empty(self):
@@ -184,8 +190,12 @@ class TestForecastResult:
         ts = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
         points = tuple(
             ForecastPoint(
-                timestamp=t, prediction=50.0, lower=30.0, upper=70.0,
-                uncertainty=40.0, model_agreement=0.9,
+                timestamp=t,
+                prediction=50.0,
+                lower=30.0,
+                upper=70.0,
+                uncertainty=40.0,
+                model_agreement=0.9,
             )
             for t in ts
         )
@@ -203,23 +213,41 @@ class TestForecastResult:
         ts = pd.date_range("2024-01-01", periods=3, freq="h", tz="UTC")
         points = tuple(
             ForecastPoint(
-                timestamp=t, prediction=50.0, lower=30.0, upper=70.0,
-                uncertainty=40.0, model_agreement=0.85, lower_static=32.0,
-                upper_static=68.0, ensemble_p50=51.0, ensemble_p25=45.0,
+                timestamp=t,
+                prediction=50.0,
+                lower=30.0,
+                upper=70.0,
+                uncertainty=40.0,
+                model_agreement=0.85,
+                lower_static=32.0,
+                upper_static=68.0,
+                ensemble_p50=51.0,
+                ensemble_p25=45.0,
                 ensemble_p75=55.0,
             )
             for t in ts
         )
         result = ForecastResult(
-            zone="NL", points=points,
+            zone="NL",
+            points=points,
             ensemble_members=pd.DataFrame(),
             model_predictions={},
             created_at=pd.Timestamp.now("UTC"),
             model_version="1.0",
         )
         df = result.to_dataframe()
-        for col in ["prediction", "lower", "upper", "uncertainty", "model_agreement",
-                    "lower_static", "upper_static", "ensemble_p50", "ensemble_p25", "ensemble_p75"]:
+        for col in [
+            "prediction",
+            "lower",
+            "upper",
+            "uncertainty",
+            "model_agreement",
+            "lower_static",
+            "upper_static",
+            "ensemble_p50",
+            "ensemble_p25",
+            "ensemble_p75",
+        ]:
             assert col in df.columns
 
 
@@ -227,9 +255,11 @@ class TestForecastResult:
 # FallbackPriceAdapter
 # ---------------------------------------------------------------------------
 
+
 class TestFallbackPriceAdapter:
     def test_name_single_adapter(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port = _mock_price_port()
         port.name = "Alpha"
         adapter = FallbackPriceAdapter([port])
@@ -237,6 +267,7 @@ class TestFallbackPriceAdapter:
 
     def test_name_multiple_adapters(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         p1, p2 = _mock_price_port(), _mock_price_port()
         p1.name = "Alpha"
         p2.name = "Beta"
@@ -246,11 +277,13 @@ class TestFallbackPriceAdapter:
 
     def test_name_empty(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         adapter = FallbackPriceAdapter([])
         assert "Fallback" in adapter.name
 
     def test_supports_zone_true(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port = _mock_price_port()
         port.supports_zone.return_value = True
         adapter = FallbackPriceAdapter([port])
@@ -258,6 +291,7 @@ class TestFallbackPriceAdapter:
 
     def test_supports_zone_false_all(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port = _mock_price_port()
         port.supports_zone.return_value = False
         adapter = FallbackPriceAdapter([port])
@@ -265,6 +299,7 @@ class TestFallbackPriceAdapter:
 
     def test_download_historical_first_succeeds(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port1 = _mock_price_port()
         port1.name = "Primary"
         series = _price_series()
@@ -281,6 +316,7 @@ class TestFallbackPriceAdapter:
 
     def test_download_historical_first_fails_second_succeeds(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port1 = _mock_price_port()
         port1.name = "Primary"
         port1.download_historical.side_effect = Exception("API error")
@@ -302,6 +338,7 @@ class TestFallbackPriceAdapter:
 
     def test_download_historical_all_fail_raises(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port1 = _mock_price_port()
         port1.download_historical.side_effect = ValueError("gone")
 
@@ -311,14 +348,18 @@ class TestFallbackPriceAdapter:
 
     def test_download_historical_no_adapters_raises(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         adapter = FallbackPriceAdapter([])
         with pytest.raises(DataUnavailableError):
             adapter.download_historical("NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 2))
 
     def test_download_historical_empty_result_tries_next(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         empty_series = PriceSeries(
-            zone="NL", records=(), source="empty",
+            zone="NL",
+            records=(),
+            source="empty",
             fetched_at=pd.Timestamp.now("UTC"),
         )
         port1 = _mock_price_port()
@@ -330,12 +371,15 @@ class TestFallbackPriceAdapter:
         port2.name = "Full"
 
         adapter = FallbackPriceAdapter([port1, port2])
-        result = adapter.download_historical("NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 2))
+        result = adapter.download_historical(
+            "NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 2)
+        )
         assert len(result) > 0
         port2.download_historical.assert_called_once()
 
     def test_download_historical_unsupported_zone_skips(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port1 = _mock_price_port(supported=False)
         port1.name = "NoZone"
 
@@ -344,12 +388,15 @@ class TestFallbackPriceAdapter:
         port2.name = "YesZone"
 
         adapter = FallbackPriceAdapter([port1, port2])
-        result = adapter.download_historical("NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 2))
+        result = adapter.download_historical(
+            "NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 2)
+        )
         assert len(result) > 0
         port1.download_historical.assert_not_called()
 
     def test_download_day_ahead_returns_first_non_empty(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port1 = _mock_price_port()
         port1.download_day_ahead.return_value = _price_series(n=24)
         port1.name = "DA"
@@ -361,6 +408,7 @@ class TestFallbackPriceAdapter:
 
     def test_download_day_ahead_returns_none_when_all_empty(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port1 = _mock_price_port()
         empty = PriceSeries(zone="NL", records=(), source="e", fetched_at=pd.Timestamp.now("UTC"))
         port1.download_day_ahead.return_value = empty
@@ -372,6 +420,7 @@ class TestFallbackPriceAdapter:
 
     def test_download_day_ahead_returns_none_when_port_returns_none(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         port1 = _mock_price_port()
         port1.download_day_ahead.return_value = None
         port1.name = "None"
@@ -382,6 +431,7 @@ class TestFallbackPriceAdapter:
 
     def test_find_missing_ranges_no_gaps(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         idx = pd.date_range("2024-01-01", periods=48, freq="h", tz="UTC")
         df = pd.DataFrame({"date": idx})
         gaps = FallbackPriceAdapter._find_missing_ranges(
@@ -393,6 +443,7 @@ class TestFallbackPriceAdapter:
 
     def test_find_missing_ranges_empty_df(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         gaps = FallbackPriceAdapter._find_missing_ranges(
             pd.DataFrame(),
             start=datetime.date(2024, 1, 1),
@@ -403,6 +454,7 @@ class TestFallbackPriceAdapter:
 
     def test_find_missing_ranges_with_gap(self):
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
+
         # Create series with a gap: Jan 1-2 OK, Jan 3 missing, Jan 4 OK
         ts_1 = pd.date_range("2024-01-01", periods=48, freq="h", tz="UTC")
         ts_2 = pd.date_range("2024-01-04", periods=24, freq="h", tz="UTC")
@@ -462,8 +514,8 @@ class TestFallbackPriceAdapter:
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
 
         # Present: Jan1-2 and Jan4, missing: Jan3 AND Jan5
-        ts_1 = pd.date_range("2024-01-01", periods=48, freq="h", tz="UTC")   # Jan1-2
-        ts_2 = pd.date_range("2024-01-04", periods=24, freq="h", tz="UTC")   # Jan4
+        ts_1 = pd.date_range("2024-01-01", periods=48, freq="h", tz="UTC")  # Jan1-2
+        ts_2 = pd.date_range("2024-01-04", periods=24, freq="h", tz="UTC")  # Jan4
         idx = ts_1.append(ts_2)
         df = pd.DataFrame({"date": idx})
 
@@ -528,8 +580,8 @@ class TestFallbackPriceAdapter:
 
     def test_fill_gaps_no_patches_returns_original(self):
         """Lines 124-125: no adapter can fill gaps → original series returned."""
+
         from runeflow.adapters.price.fallback import FallbackPriceAdapter
-        from unittest.mock import patch as mpatch
 
         port1 = _mock_price_port()
         port1.name = "Primary"
@@ -560,10 +612,12 @@ class TestFallbackPriceAdapter:
 # Binder smoke-test
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=False)
 def clear_inject():
     """Clear inject state before and after each binder test."""
     import inject
+
     inject.clear()
     yield
     inject.clear()
@@ -581,13 +635,16 @@ class TestBinder:
         configure_injector("NL", env=env, allow_override=True)
 
         import inject as _inject
+
         from runeflow.zones.config import ZoneConfig
+
         cfg = _inject.instance(ZoneConfig)
         assert cfg.zone == "NL"
 
     def test_configure_injector_with_entsoe_key(self, tmp_path, clear_inject):
         """If ENTSOE key is provided, EntsoePriceAdapter + GenerationAdapter are bound."""
         import inject as _inject
+
         from runeflow.binder import configure_injector
         from runeflow.ports.price import PricePort
 
@@ -604,18 +661,22 @@ class TestBinder:
     def test_configure_injector_de_lu(self, tmp_path, clear_inject):
         """configure_injector should work for DE_LU zone."""
         from runeflow.binder import configure_injector
+
         env = {"ZONE": "DE_LU", "CACHE_DIR": str(tmp_path)}
         configure_injector("DE_LU", env=env, allow_override=True)
 
         import inject as _inject
+
         from runeflow.zones.config import ZoneConfig
+
         cfg = _inject.instance(ZoneConfig)
         assert cfg.zone == "DE_LU"
 
     def test_configure_injector_with_ned_key(self, tmp_path, clear_inject):
         """NED key set for NL zone → NedAdapter binding (binder.py lines 110-112)."""
-        from runeflow.binder import configure_injector
         import inject as _inject
+
+        from runeflow.binder import configure_injector
         from runeflow.ports.supplemental import SupplementalDataPort
 
         env = {"ZONE": "NL", "CACHE_DIR": str(tmp_path), "NED": "test_ned_api_key"}
@@ -629,23 +690,28 @@ class TestBinder:
 # Weather Caching Strategies
 # ---------------------------------------------------------------------------
 
+
 class TestWeatherCachingStrategies:
     """Tests for ForecastCachingStrategy, NoCachingStrategy, ReadOnlyCachingStrategy."""
 
-    def _make_weather_series(self) -> "WeatherSeries":
+    def _make_weather_series(self) -> WeatherSeries:
         from runeflow.domain.weather import WeatherSeries
+
         idx = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
         df = pd.DataFrame({"temperature_2m": [10.0] * 24}, index=idx)
         return WeatherSeries(
-            locations=("nl",), df=df, source="test",
+            locations=("nl",),
+            df=df,
+            source="test",
             fetched_at=pd.Timestamp.now("UTC"),
         )
 
     def test_forecast_caching_strategy_is_fresh(self):
         """TTLCachingStrategy.is_fresh() calls store.is_forecast_weather_fresh (line 78)."""
-        from runeflow.adapters.weather.strategies import TTLCachingStrategy
-        from unittest.mock import MagicMock
         import datetime as dt
+        from unittest.mock import MagicMock
+
+        from runeflow.adapters.weather.strategies import TTLCachingStrategy
 
         store = MagicMock()
         store.is_forecast_weather_fresh.return_value = True
@@ -658,9 +724,10 @@ class TestWeatherCachingStrategies:
 
     def test_forecast_caching_strategy_on_downloaded(self):
         """TTLCachingStrategy.on_downloaded() calls store.save_forecast_weather (line 87)."""
-        from runeflow.adapters.weather.strategies import TTLCachingStrategy
-        from unittest.mock import MagicMock
         import datetime as dt
+        from unittest.mock import MagicMock
+
+        from runeflow.adapters.weather.strategies import TTLCachingStrategy
 
         store = MagicMock()
         ws = self._make_weather_series()
@@ -672,8 +739,9 @@ class TestWeatherCachingStrategies:
 
     def test_no_caching_strategy_is_fresh_always_false(self):
         """NoCachingStrategy.is_fresh() returns False (line 102)."""
-        from runeflow.adapters.weather.strategies import NoCachingStrategy
         from unittest.mock import MagicMock
+
+        from runeflow.adapters.weather.strategies import NoCachingStrategy
 
         store = MagicMock()
         strategy = NoCachingStrategy()
@@ -682,8 +750,9 @@ class TestWeatherCachingStrategies:
 
     def test_no_caching_strategy_on_downloaded_is_noop(self):
         """NoCachingStrategy.on_downloaded() is a no-op (line 111)."""
-        from runeflow.adapters.weather.strategies import NoCachingStrategy
         from unittest.mock import MagicMock
+
+        from runeflow.adapters.weather.strategies import NoCachingStrategy
 
         store = MagicMock()
         ws = self._make_weather_series()
@@ -693,17 +762,19 @@ class TestWeatherCachingStrategies:
 
     def test_readonly_caching_strategy_init(self):
         """ReadOnlyCachingStrategy.__init__ stores ttl (line 124)."""
-        from runeflow.adapters.weather.strategies import ReadOnlyCachingStrategy
         import datetime as dt
+
+        from runeflow.adapters.weather.strategies import ReadOnlyCachingStrategy
 
         strategy = ReadOnlyCachingStrategy(ttl=dt.timedelta(hours=6))
         assert strategy._ttl == dt.timedelta(hours=6)
 
     def test_readonly_caching_strategy_is_fresh(self):
         """ReadOnlyCachingStrategy.is_fresh() calls store.is_forecast_weather_fresh (line 133)."""
-        from runeflow.adapters.weather.strategies import ReadOnlyCachingStrategy
-        from unittest.mock import MagicMock
         import datetime as dt
+        from unittest.mock import MagicMock
+
+        from runeflow.adapters.weather.strategies import ReadOnlyCachingStrategy
 
         store = MagicMock()
         store.is_forecast_weather_fresh.return_value = True
@@ -715,9 +786,10 @@ class TestWeatherCachingStrategies:
 
     def test_readonly_caching_strategy_on_downloaded_is_noop(self):
         """ReadOnlyCachingStrategy.on_downloaded() is a no-op (line 142)."""
-        from runeflow.adapters.weather.strategies import ReadOnlyCachingStrategy
-        from unittest.mock import MagicMock
         import datetime as dt
+        from unittest.mock import MagicMock
+
+        from runeflow.adapters.weather.strategies import ReadOnlyCachingStrategy
 
         store = MagicMock()
         ws = self._make_weather_series()
@@ -730,21 +802,26 @@ class TestWeatherCachingStrategies:
 # CachingWeatherAdapter
 # ---------------------------------------------------------------------------
 
+
 class TestCachingWeatherAdapter:
     """Tests for CachingWeatherAdapter covering caching.py missing lines."""
 
-    def _make_weather_series(self, n: int = 24) -> "WeatherSeries":
+    def _make_weather_series(self, n: int = 24) -> WeatherSeries:
         from runeflow.domain.weather import WeatherSeries
+
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
         df = pd.DataFrame({"temperature_2m": [10.0] * n}, index=idx)
         return WeatherSeries(
-            locations=("nl",), df=df, source="test",
+            locations=("nl",),
+            df=df,
+            source="test",
             fetched_at=pd.Timestamp.now("UTC"),
         )
 
     def _make_adapter(self, strategy=None):
-        from runeflow.adapters.weather.caching import CachingWeatherAdapter
         from unittest.mock import MagicMock
+
+        from runeflow.adapters.weather.caching import CachingWeatherAdapter
 
         inner = MagicMock()
         store = MagicMock()
@@ -755,11 +832,14 @@ class TestCachingWeatherAdapter:
 
         if strategy is None:
             from unittest.mock import MagicMock
+
             strategy = MagicMock()
             strategy.is_fresh.return_value = False
 
         adapter = CachingWeatherAdapter(
-            inner, store, "NL",
+            inner,
+            store,
+            "NL",
             strategy=strategy,
             n_ensemble_members=2,
         )
@@ -767,8 +847,9 @@ class TestCachingWeatherAdapter:
 
     def test_download_historical_delegates_to_inner(self):
         """Line 101: download_historical passes through to inner adapter."""
-        from runeflow.domain.weather import WeatherLocation
         import datetime as dt
+
+        from runeflow.domain.weather import WeatherLocation
 
         adapter, inner, store, ws = self._make_adapter()
         loc = WeatherLocation(name="nl", lat=52.0, lon=5.0, purpose="primary")
@@ -780,6 +861,7 @@ class TestCachingWeatherAdapter:
     def test_download_forecast_cache_hit(self):
         """Lines 109-117: strategy.is_fresh=True and cached data available."""
         from unittest.mock import MagicMock
+
         from runeflow.domain.weather import WeatherLocation
 
         ws = self._make_weather_series()
@@ -797,6 +879,7 @@ class TestCachingWeatherAdapter:
     def test_download_forecast_cache_miss(self):
         """Lines 118-124: strategy.is_fresh=False → download from inner."""
         from unittest.mock import MagicMock
+
         from runeflow.domain.weather import WeatherLocation
 
         strategy = MagicMock()
@@ -813,6 +896,7 @@ class TestCachingWeatherAdapter:
     def test_download_forecast_cache_hit_but_store_returns_none(self):
         """Lines 110-117: strategy fresh but load returns None → re-download."""
         from unittest.mock import MagicMock
+
         from runeflow.domain.weather import WeatherLocation
 
         ws = self._make_weather_series()
@@ -823,13 +907,14 @@ class TestCachingWeatherAdapter:
 
         inner.download_forecast.return_value = ws
         loc = WeatherLocation(name="nl", lat=52.0, lon=5.0, purpose="primary")
-        result = adapter.download_forecast([loc])
+        adapter.download_forecast([loc])
 
         inner.download_forecast.assert_called_once()
 
     def test_download_ensemble_cache_hit(self):
         """Lines 138-145: ensemble strategy fresh and all members cached."""
         from unittest.mock import MagicMock
+
         from runeflow.domain.weather import WeatherLocation
 
         ws0 = self._make_weather_series()
@@ -850,6 +935,7 @@ class TestCachingWeatherAdapter:
     def test_download_ensemble_cache_miss(self):
         """Lines 146-163: ensemble strategy not fresh → download."""
         from unittest.mock import MagicMock
+
         from runeflow.domain.weather import WeatherLocation
 
         ws0 = self._make_weather_series()
@@ -861,14 +947,13 @@ class TestCachingWeatherAdapter:
         inner.download_ensemble_forecast.return_value = [ws0, ws1]
 
         loc = WeatherLocation(name="nl", lat=52.0, lon=5.0, purpose="primary")
-        result = adapter.download_ensemble_forecast([loc])
+        adapter.download_ensemble_forecast([loc])
 
         inner.download_ensemble_forecast.assert_called_once()
         assert strategy.on_downloaded.call_count == 2  # one per member
 
     def test_load_all_cached_members_returns_none_on_missing(self):
         """Lines 169-175: _load_all_cached_members returns None if any member missing."""
-        from unittest.mock import MagicMock
 
         ws = self._make_weather_series()
         adapter, inner, store, _ = self._make_adapter()
@@ -889,7 +974,7 @@ class TestEntsoePriceAdapter:
     """Tests for adapters/price/entsoe.py."""
 
     def _make_adapter(self, api_key: str = "test-key"):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         with patch("runeflow.adapters.price.entsoe.EntsoePandasClient") as mock_cls:
             from runeflow.adapters.price.entsoe import EntsoePriceAdapter
@@ -941,7 +1026,7 @@ class TestEntsoePriceAdapter:
             _zone_to_area("XXXXNOTAZONE")
 
     def test_download_historical_happy_path(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         start = datetime.date(2024, 1, 1)
         end = datetime.date(2024, 1, 3)
@@ -985,9 +1070,7 @@ class TestEntsoePriceAdapter:
         end = datetime.date(2024, 1, 1)
 
         with patch("runeflow.adapters.price.entsoe.EntsoePandasClient") as mock_cls:
-            mock_cls.return_value.query_day_ahead_prices.return_value = pd.Series(
-                [], dtype=float
-            )
+            mock_cls.return_value.query_day_ahead_prices.return_value = pd.Series([], dtype=float)
             from runeflow.adapters.price.entsoe import EntsoePriceAdapter
 
             adapter = EntsoePriceAdapter("key")
@@ -1013,12 +1096,8 @@ class TestEntsoePriceAdapter:
     def test_download_day_ahead_logs_and_returns_none_on_error(self):
         from unittest.mock import patch
 
-        from runeflow.exceptions import DataUnavailableError
-
         with patch("runeflow.adapters.price.entsoe.EntsoePandasClient") as mock_cls:
-            mock_cls.return_value.query_day_ahead_prices.return_value = pd.Series(
-                [], dtype=float
-            )
+            mock_cls.return_value.query_day_ahead_prices.return_value = pd.Series([], dtype=float)
             from runeflow.adapters.price.entsoe import EntsoePriceAdapter
 
             adapter = EntsoePriceAdapter("key")
@@ -1074,11 +1153,13 @@ class TestEnergyZeroPriceAdapter:
         }
         fake_response.raise_for_status.return_value = None
 
-        with patch("runeflow.adapters.price.energyzero.requests.get", return_value=fake_response):
-            with patch("runeflow.adapters.price.energyzero.time.sleep"):
-                result = adapter.download_historical(
-                    "NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
-                )
+        with (
+            patch("runeflow.adapters.price.energyzero.requests.get", return_value=fake_response),
+            patch("runeflow.adapters.price.energyzero.time.sleep"),
+        ):
+            result = adapter.download_historical(
+                "NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
+            )
 
         assert result is not None
         assert result.zone == "NL"
@@ -1093,12 +1174,12 @@ class TestEnergyZeroPriceAdapter:
         fake_response.json.return_value = {"Prices": []}
         fake_response.raise_for_status.return_value = None
 
-        with patch("runeflow.adapters.price.energyzero.requests.get", return_value=fake_response):
-            with patch("runeflow.adapters.price.energyzero.time.sleep"):
-                with pytest.raises(DataUnavailableError, match="returned no data"):
-                    adapter.download_historical(
-                        "NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
-                    )
+        with (
+            patch("runeflow.adapters.price.energyzero.requests.get", return_value=fake_response),
+            patch("runeflow.adapters.price.energyzero.time.sleep"),
+            pytest.raises(DataUnavailableError, match="returned no data"),
+        ):
+            adapter.download_historical("NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
 
     def test_fetch_chunk_request_exception_raises_download_error(self, adapter):
         from unittest.mock import patch
@@ -1107,12 +1188,14 @@ class TestEnergyZeroPriceAdapter:
 
         from runeflow.exceptions import DownloadError
 
-        with patch(
-            "runeflow.adapters.price.energyzero.requests.get",
-            side_effect=req_lib.RequestException("timeout"),
+        with (
+            patch(
+                "runeflow.adapters.price.energyzero.requests.get",
+                side_effect=req_lib.RequestException("timeout"),
+            ),
+            pytest.raises(DownloadError, match="EnergyZero request failed"),
         ):
-            with pytest.raises(DownloadError, match="EnergyZero request failed"):
-                adapter._fetch_chunk(datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
+            adapter._fetch_chunk(datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
 
     def test_fetch_chunk_returns_none_on_empty_prices(self, adapter):
         from unittest.mock import patch
@@ -1135,9 +1218,11 @@ class TestEnergyZeroPriceAdapter:
         }
         fake_response.raise_for_status.return_value = None
 
-        with patch("runeflow.adapters.price.energyzero.requests.get", return_value=fake_response):
-            with patch("runeflow.adapters.price.energyzero.time.sleep"):
-                result = adapter.download_day_ahead("NL")
+        with (
+            patch("runeflow.adapters.price.energyzero.requests.get", return_value=fake_response),
+            patch("runeflow.adapters.price.energyzero.time.sleep"),
+        ):
+            result = adapter.download_day_ahead("NL")
 
         assert result is not None
 
@@ -1160,7 +1245,7 @@ class TestEnergyZeroPriceAdapter:
 
     def test_download_historical_multi_chunk_calls_sleep(self, adapter):
         """Line 68: time.sleep is called between chunks (range > 90 days)."""
-        from unittest.mock import call, patch
+        from unittest.mock import patch
 
         # Two prices per chunk to keep it simple
         fake_response = MagicMock()
@@ -1172,18 +1257,18 @@ class TestEnergyZeroPriceAdapter:
         }
 
         sleep_calls = []
-        with patch(
-            "runeflow.adapters.price.energyzero.requests.get", return_value=fake_response
-        ):
-            with patch(
+        with (
+            patch("runeflow.adapters.price.energyzero.requests.get", return_value=fake_response),
+            patch(
                 "runeflow.adapters.price.energyzero.time.sleep",
                 side_effect=lambda s: sleep_calls.append(s),
-            ):
-                result = adapter.download_historical(
-                    "NL",
-                    datetime.date(2024, 1, 1),
-                    datetime.date(2024, 5, 1),  # > 90 days → 2 chunks
-                )
+            ),
+        ):
+            result = adapter.download_historical(
+                "NL",
+                datetime.date(2024, 1, 1),
+                datetime.date(2024, 5, 1),  # > 90 days → 2 chunks
+            )
 
         # time.sleep should have been called between chunks (line 68)
         assert len(sleep_calls) >= 1
@@ -1226,11 +1311,11 @@ class TestNedAdapter:
         }
         fake_response.raise_for_status.return_value = None
 
-        with patch("runeflow.adapters.supplemental.ned.requests.get", return_value=fake_response):
-            with patch("runeflow.adapters.supplemental.ned.time.sleep"):
-                result = adapter.download(
-                    "NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
-                )
+        with (
+            patch("runeflow.adapters.supplemental.ned.requests.get", return_value=fake_response),
+            patch("runeflow.adapters.supplemental.ned.time.sleep"),
+        ):
+            result = adapter.download("NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
 
         assert result is not None
         assert "ned_utilization_kwh" in result.columns
@@ -1242,11 +1327,11 @@ class TestNedAdapter:
         fake_response.json.return_value = {"hydra:member": []}
         fake_response.raise_for_status.return_value = None
 
-        with patch("runeflow.adapters.supplemental.ned.requests.get", return_value=fake_response):
-            with patch("runeflow.adapters.supplemental.ned.time.sleep"):
-                result = adapter.download(
-                    "NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
-                )
+        with (
+            patch("runeflow.adapters.supplemental.ned.requests.get", return_value=fake_response),
+            patch("runeflow.adapters.supplemental.ned.time.sleep"),
+        ):
+            result = adapter.download("NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
 
         assert result is None
 
@@ -1257,12 +1342,14 @@ class TestNedAdapter:
 
         from runeflow.exceptions import DownloadError
 
-        with patch(
-            "runeflow.adapters.supplemental.ned.requests.get",
-            side_effect=req_lib.RequestException("timeout"),
+        with (
+            patch(
+                "runeflow.adapters.supplemental.ned.requests.get",
+                side_effect=req_lib.RequestException("timeout"),
+            ),
+            pytest.raises(DownloadError, match="NED historical request failed"),
         ):
-            with pytest.raises(DownloadError, match="NED historical request failed"):
-                adapter._download_historical(datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
+            adapter._download_historical(datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
 
     def test_download_forecast_unsupported_zone_returns_none(self, adapter):
         result = adapter.download_forecast("DE")
@@ -1305,12 +1392,14 @@ class TestNedAdapter:
 
         from runeflow.exceptions import DownloadError
 
-        with patch(
-            "runeflow.adapters.supplemental.ned.requests.get",
-            side_effect=req_lib.RequestException("err"),
+        with (
+            patch(
+                "runeflow.adapters.supplemental.ned.requests.get",
+                side_effect=req_lib.RequestException("err"),
+            ),
+            pytest.raises(DownloadError, match="NED forecast request failed"),
         ):
-            with pytest.raises(DownloadError, match="NED forecast request failed"):
-                adapter._download_forecasted()
+            adapter._download_forecasted()
 
     def test_month_chunks_single_month(self):
         from datetime import datetime as dt
@@ -1336,7 +1425,7 @@ class TestEntsoeGenerationAdapter:
 
     @pytest.fixture()
     def adapter_and_mock(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         with patch("runeflow.adapters.generation.entsoe.EntsoePandasClient") as mock_cls:
             from runeflow.adapters.generation.entsoe import EntsoeGenerationAdapter
@@ -1365,9 +1454,7 @@ class TestEntsoeGenerationAdapter:
         adapter, mock_client = adapter_and_mock
 
         index = pd.date_range("2024-01-01", periods=24, freq="h", tz="UTC")
-        mock_client.query_load_forecast.return_value = pd.Series(
-            [5000.0] * 24, index=index
-        )
+        mock_client.query_load_forecast.return_value = pd.Series([5000.0] * 24, index=index)
         mock_client.query_wind_and_solar_forecast.return_value = pd.DataFrame(
             {"Wind Onshore": [1000.0] * 24, "Solar": [200.0] * 24}, index=index
         )
@@ -1396,7 +1483,9 @@ class TestEntsoeGenerationAdapter:
         adapter, mock_client = adapter_and_mock
 
         mock_client.query_load_forecast.side_effect = RuntimeError("API error")
-        result = adapter._fetch_load_forecast("NL", pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-01-02", tz="UTC"))
+        result = adapter._fetch_load_forecast(
+            "NL", pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-01-02", tz="UTC")
+        )
 
         assert result is None
 
@@ -1404,7 +1493,9 @@ class TestEntsoeGenerationAdapter:
         adapter, mock_client = adapter_and_mock
 
         mock_client.query_load_forecast.return_value = pd.Series([], dtype=float)
-        result = adapter._fetch_load_forecast("NL", pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-01-02", tz="UTC"))
+        result = adapter._fetch_load_forecast(
+            "NL", pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-01-02", tz="UTC")
+        )
 
         assert result is None
 
@@ -1412,7 +1503,9 @@ class TestEntsoeGenerationAdapter:
         adapter, mock_client = adapter_and_mock
 
         mock_client.query_wind_and_solar_forecast.side_effect = RuntimeError("API error")
-        result = adapter._fetch_wind_solar_forecast("NL", pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-01-02", tz="UTC"))
+        result = adapter._fetch_wind_solar_forecast(
+            "NL", pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-01-02", tz="UTC")
+        )
 
         assert result is None
 
@@ -1426,7 +1519,9 @@ class TestEntsoeGenerationAdapter:
         )
         mock_client.query_wind_and_solar_forecast.return_value = df
 
-        result = adapter._fetch_wind_solar_forecast("NL", pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-01-02", tz="UTC"))
+        result = adapter._fetch_wind_solar_forecast(
+            "NL", pd.Timestamp("2024-01-01", tz="UTC"), pd.Timestamp("2024-01-02", tz="UTC")
+        )
 
         assert result is not None
         # All column names are lowercase with underscores
@@ -1548,12 +1643,14 @@ class TestOpenMeteoAdapter:
     def test_get_with_retry_success(self, adapter):
         from unittest.mock import patch
 
-        with patch(
-            "runeflow.adapters.weather.openmeteo.requests.get",
-            return_value=_fake_resp(_FAKE_HOURLY_JSON),
+        with (
+            patch(
+                "runeflow.adapters.weather.openmeteo.requests.get",
+                return_value=_fake_resp(_FAKE_HOURLY_JSON),
+            ),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
         ):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                resp = adapter._get_with_retry("http://example.com", {})
+            resp = adapter._get_with_retry("http://example.com", {})
 
         assert resp is not None
         assert resp.json() == _FAKE_HOURLY_JSON
@@ -1566,12 +1663,12 @@ class TestOpenMeteoAdapter:
         rate_limited = _fake_resp({}, status=429)
         rate_limited.raise_for_status.return_value = None
 
-        with patch(
-            "runeflow.adapters.weather.openmeteo.requests.get", return_value=rate_limited
+        with (
+            patch("runeflow.adapters.weather.openmeteo.requests.get", return_value=rate_limited),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+            pytest.raises(RateLimitError, match="Rate limit exceeded"),
         ):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                with pytest.raises(RateLimitError, match="Rate limit exceeded"):
-                    adapter._get_with_retry("http://example.com", {}, max_retries=4)
+            adapter._get_with_retry("http://example.com", {}, max_retries=4)
 
     def test_get_with_retry_rate_limit_retries_once(self, adapter):
         """429 on first attempt → sleep → success on second attempt."""
@@ -1581,12 +1678,14 @@ class TestOpenMeteoAdapter:
         rate_limited.raise_for_status.return_value = None
         success = _fake_resp(_FAKE_HOURLY_JSON)
 
-        with patch(
-            "runeflow.adapters.weather.openmeteo.requests.get",
-            side_effect=[rate_limited, success],
+        with (
+            patch(
+                "runeflow.adapters.weather.openmeteo.requests.get",
+                side_effect=[rate_limited, success],
+            ),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
         ):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                resp = adapter._get_with_retry("http://example.com", {}, max_retries=4)
+            resp = adapter._get_with_retry("http://example.com", {}, max_retries=4)
 
         assert resp is not None
 
@@ -1597,13 +1696,15 @@ class TestOpenMeteoAdapter:
 
         from runeflow.exceptions import DownloadError
 
-        with patch(
-            "runeflow.adapters.weather.openmeteo.requests.get",
-            side_effect=req_lib.RequestException("timeout"),
+        with (
+            patch(
+                "runeflow.adapters.weather.openmeteo.requests.get",
+                side_effect=req_lib.RequestException("timeout"),
+            ),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+            pytest.raises(DownloadError, match="Open-Meteo request failed"),
         ):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                with pytest.raises(DownloadError, match="Open-Meteo request failed"):
-                    adapter._get_with_retry("http://example.com", {}, max_retries=1)
+            adapter._get_with_retry("http://example.com", {}, max_retries=1)
 
     def test_get_with_retry_request_exception_retries(self, adapter):
         """Request fails on first call, succeeds on second — no DownloadError raised."""
@@ -1611,12 +1712,14 @@ class TestOpenMeteoAdapter:
 
         import requests as req_lib
 
-        with patch(
-            "runeflow.adapters.weather.openmeteo.requests.get",
-            side_effect=[req_lib.RequestException("timeout"), _fake_resp(_FAKE_HOURLY_JSON)],
+        with (
+            patch(
+                "runeflow.adapters.weather.openmeteo.requests.get",
+                side_effect=[req_lib.RequestException("timeout"), _fake_resp(_FAKE_HOURLY_JSON)],
+            ),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
         ):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                resp = adapter._get_with_retry("http://example.com", {}, max_retries=4)
+            resp = adapter._get_with_retry("http://example.com", {}, max_retries=4)
 
         assert resp is not None
 
@@ -1631,14 +1734,16 @@ class TestOpenMeteoAdapter:
         from unittest.mock import patch
 
         with patch.object(adapter, "_get_with_retry", return_value=_fake_resp(_FAKE_HOURLY_JSON)):
-            df = adapter._fetch_historical(loc, datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
+            df = adapter._fetch_historical(
+                loc, datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
+            )
 
         assert df is not None
         assert "temperature_2m" in df.columns
 
     def test_fetch_historical_end_in_future_clamps(self, adapter, loc):
-        from unittest.mock import patch
         import datetime as dt
+        from unittest.mock import patch
 
         future = dt.date.today() + dt.timedelta(days=10)
         with patch.object(adapter, "_get_with_retry", return_value=_fake_resp(_FAKE_HOURLY_JSON)):
@@ -1661,11 +1766,11 @@ class TestOpenMeteoAdapter:
 
         from runeflow.exceptions import DownloadError
 
-        with patch.object(adapter, "_get_with_retry", side_effect=DownloadError("fail")):
-            with pytest.raises(DownloadError):
-                adapter._fetch_historical(
-                    loc, datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
-                )
+        with (
+            patch.object(adapter, "_get_with_retry", side_effect=DownloadError("fail")),
+            pytest.raises(DownloadError),
+        ):
+            adapter._fetch_historical(loc, datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
 
     # ── _fetch_forecast ────────────────────────────────────────────────────
 
@@ -1778,52 +1883,68 @@ class TestOpenMeteoAdapter:
     def test_download_historical_happy_path(self, adapter, loc):
         from unittest.mock import patch
 
-        with patch.object(adapter, "_fetch_historical", return_value=pd.DataFrame(
-            {"temperature_2m": [5.0]},
-            index=pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC"),
-        )):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                result = adapter.download_historical(
-                    [loc], datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
-                )
+        with (
+            patch.object(
+                adapter,
+                "_fetch_historical",
+                return_value=pd.DataFrame(
+                    {"temperature_2m": [5.0]},
+                    index=pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC"),
+                ),
+            ),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+        ):
+            result = adapter.download_historical(
+                [loc], datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
+            )
 
         assert result is not None
         assert result.source == "open-meteo-historical"
 
     def test_download_historical_no_data_raises(self, adapter, loc):
-        from runeflow.exceptions import DataUnavailableError
         from unittest.mock import patch
 
-        with patch.object(adapter, "_fetch_historical", return_value=None):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                with pytest.raises(DataUnavailableError, match="no historical weather"):
-                    adapter.download_historical(
-                        [loc], datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
-                    )
+        from runeflow.exceptions import DataUnavailableError
+
+        with (
+            patch.object(adapter, "_fetch_historical", return_value=None),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+            pytest.raises(DataUnavailableError, match="no historical weather"),
+        ):
+            adapter.download_historical([loc], datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
 
     # ── download_forecast ──────────────────────────────────────────────────
 
     def test_download_forecast_happy_path(self, adapter, loc):
         from unittest.mock import patch
 
-        with patch.object(adapter, "_fetch_forecast", return_value=pd.DataFrame(
-            {"temperature_2m": [5.0]},
-            index=pd.date_range("2024-01-10", periods=1, freq="h", tz="UTC"),
-        )):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                result = adapter.download_forecast([loc])
+        with (
+            patch.object(
+                adapter,
+                "_fetch_forecast",
+                return_value=pd.DataFrame(
+                    {"temperature_2m": [5.0]},
+                    index=pd.date_range("2024-01-10", periods=1, freq="h", tz="UTC"),
+                ),
+            ),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+        ):
+            result = adapter.download_forecast([loc])
 
         assert result is not None
         assert result.source == "open-meteo-forecast"
 
     def test_download_forecast_no_data_raises(self, adapter, loc):
-        from runeflow.exceptions import DataUnavailableError
         from unittest.mock import patch
 
-        with patch.object(adapter, "_fetch_forecast", return_value=None):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                with pytest.raises(DataUnavailableError, match="no forecast weather"):
-                    adapter.download_forecast([loc])
+        from runeflow.exceptions import DataUnavailableError
+
+        with (
+            patch.object(adapter, "_fetch_forecast", return_value=None),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+            pytest.raises(DataUnavailableError, match="no forecast weather"),
+        ):
+            adapter.download_forecast([loc])
 
     # ── download_ensemble_forecast ─────────────────────────────────────────
 
@@ -1836,18 +1957,23 @@ class TestOpenMeteoAdapter:
             1: pd.DataFrame({"temperature_2m": [3.1, 4.1]}, index=idx),
         }
 
-        with patch.object(adapter, "_fetch_ensemble_members", return_value=fake_members):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                results = adapter.download_ensemble_forecast([loc])
+        with (
+            patch.object(adapter, "_fetch_ensemble_members", return_value=fake_members),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+        ):
+            results = adapter.download_ensemble_forecast([loc])
 
         assert len(results) == 2
         assert results[0].source == "open-meteo-ensemble-member-0"
 
     def test_download_ensemble_forecast_no_members_raises(self, adapter, loc):
-        from runeflow.exceptions import DataUnavailableError
         from unittest.mock import patch
 
-        with patch.object(adapter, "_fetch_ensemble_members", return_value=None):
-            with patch("runeflow.adapters.weather.openmeteo.time.sleep"):
-                with pytest.raises(DataUnavailableError, match="no ensemble member"):
-                    adapter.download_ensemble_forecast([loc])
+        from runeflow.exceptions import DataUnavailableError
+
+        with (
+            patch.object(adapter, "_fetch_ensemble_members", return_value=None),
+            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+            pytest.raises(DataUnavailableError, match="no ensemble member"),
+        ):
+            adapter.download_ensemble_forecast([loc])

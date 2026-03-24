@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Ensemble strategy registry."""
+
 from __future__ import annotations
 
 from runeflow.ports.ensemble import EnsembleStrategy

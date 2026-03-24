@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Weather adapter package."""
+
 from runeflow.adapters.weather.openmeteo import OpenMeteoAdapter
 
 __all__ = ["OpenMeteoAdapter"]

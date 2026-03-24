@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """OpenMeteo weather adapter — historical, forecast and ensemble members."""
+
 from __future__ import annotations
 
 import datetime
@@ -100,9 +101,7 @@ class OpenMeteoAdapter(WeatherPort):
             raise DataUnavailableError(
                 f"Open-Meteo returned no historical weather for {start}→{end}."
             )
-        return WeatherSeries.from_location_frames(
-            frames, source="open-meteo-historical"
-        )
+        return WeatherSeries.from_location_frames(frames, source="open-meteo-historical")
 
     def download_forecast(
         self,
@@ -207,9 +206,7 @@ class OpenMeteoAdapter(WeatherPort):
             logger.error(f"[OpenMeteo] Historical fetch failed for {loc.name}: {exc}")
             raise
 
-    def _fetch_forecast(
-        self, loc: WeatherLocation, forecast_days: int = 9
-    ) -> pd.DataFrame | None:
+    def _fetch_forecast(self, loc: WeatherLocation, forecast_days: int = 9) -> pd.DataFrame | None:
         params: dict[str, Any] = {
             "latitude": loc.lat,
             "longitude": loc.lon,

@@ -3,18 +3,15 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Parquet-backed DataStore implementation."""
+
 from __future__ import annotations
 
 import datetime
 import json
-import os
-import pickle
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 from loguru import logger
 
 from runeflow.domain.forecast import ForecastPoint, ForecastResult
@@ -121,15 +118,11 @@ class ParquetStore(DataStore):
         schema = sorted(c for c in df.columns if c != "date")
         self._write_parquet(path, df, source=data.source, zone=zone, schema=schema)
 
-    def load_forecast_weather(
-        self, zone: str
-    ) -> WeatherSeries | None:
+    def load_forecast_weather(self, zone: str) -> WeatherSeries | None:
         path = self._weather_forecast_path(zone)
         return self._load_weather_series(path)
 
-    def load_forecast_weather_ensemble(
-        self, zone: str, member: int
-    ) -> WeatherSeries | None:
+    def load_forecast_weather_ensemble(self, zone: str, member: int) -> WeatherSeries | None:
         path = self._weather_ensemble_path(zone, member)
         return self._load_weather_series(path)
 
@@ -219,9 +212,7 @@ class ParquetStore(DataStore):
         existing = self._read_parquet(path)
         save_df = df.reset_index()
         if existing is not None and not existing.empty:
-            save_df = pd.concat(
-                [existing.reset_index(drop=True), save_df], ignore_index=True
-            )
+            save_df = pd.concat([existing.reset_index(drop=True), save_df], ignore_index=True)
             idx_col = save_df.columns[0]
             save_df.drop_duplicates(subset=[idx_col], keep="last", inplace=True)
             save_df.sort_values(idx_col, inplace=True)
@@ -240,7 +231,7 @@ class ParquetStore(DataStore):
     def save_model(self, model_bytes: bytes, zone: str, model_name: str) -> None:
         path = self._model_path(zone, model_name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(path, lambda tmp: tmp.write_bytes(model_bytes))
+        _atomic_write(path, lambda tmp: tmp.write_bytes(model_bytes))  # type: ignore[arg-type]
         logger.debug(f"[ParquetStore] Saved model {model_name} for {zone}.")
 
     def load_model(self, zone: str, model_name: str) -> bytes | None:
@@ -280,19 +271,16 @@ class ParquetStore(DataStore):
             },
         }
         # Ensemble members: store as {col: {ts_iso: val, …}, …}
-        if (
-            result.ensemble_members is not None
-            and not result.ensemble_members.empty
-        ):
+        if result.ensemble_members is not None and not result.ensemble_members.empty:
             ens = result.ensemble_members
             data["ensemble_members"] = {
                 str(col): {
-                    ts.isoformat(): float(v)
+                    ts.isoformat(): float(v)  # type: ignore[attr-defined]
                     for ts, v in ens[col].items()
                 }
                 for col in ens.columns
             }
-        _atomic_write(path, lambda tmp: tmp.write_text(json.dumps(data), encoding="utf-8"))
+        _atomic_write(path, lambda tmp: tmp.write_text(json.dumps(data), encoding="utf-8"))  # type: ignore[arg-type]
 
     def load_latest_forecast(self, zone: str) -> ForecastResult | None:
         path = self._forecast_latest_path(zone)
@@ -317,9 +305,7 @@ class ParquetStore(DataStore):
         )
         raw_model_preds = data.get("model_predictions", {})
         model_predictions = {
-            k: pd.Series(
-                {pd.Timestamp(ts): float(v) for ts, v in series.items()}
-            )
+            k: pd.Series({pd.Timestamp(ts): float(v) for ts, v in series.items()})
             for k, series in raw_model_preds.items()
         }
         # Restore ensemble members if present
@@ -328,10 +314,7 @@ class ParquetStore(DataStore):
         if raw_ens:
             ens_df = pd.DataFrame(
                 {
-                    col: {
-                        pd.Timestamp(ts): float(v)
-                        for ts, v in series.items()
-                    }
+                    col: {pd.Timestamp(ts): float(v) for ts, v in series.items()}
                     for col, series in raw_ens.items()
                 }
             )
@@ -388,7 +371,9 @@ class ParquetStore(DataStore):
         return self._root / "weather" / zone / "forecast" / "deterministic.parquet"
 
     def _weather_ensemble_path(self, zone: str, member: int) -> Path:
-        return self._root / "weather" / zone / "forecast" / "ensemble" / f"member_{member:02d}.parquet"
+        return (
+            self._root / "weather" / zone / "forecast" / "ensemble" / f"member_{member:02d}.parquet"
+        )
 
     def _generation_path(self, zone: str) -> Path:
         return self._root / "generation" / zone / "historical.parquet"
@@ -417,7 +402,11 @@ class ParquetStore(DataStore):
             return None
 
     def _write_parquet(
-        self, path: Path, df: pd.DataFrame, source: str = "", zone: str = "",
+        self,
+        path: Path,
+        df: pd.DataFrame,
+        source: str = "",
+        zone: str = "",
         schema: list[str] | None = None,
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -436,7 +425,7 @@ class ParquetStore(DataStore):
         _atomic_write(path, _write)
         _atomic_write(
             path.with_suffix(".meta.json"),
-            lambda p: p.write_text(json.dumps(meta), encoding="utf-8"),
+            lambda p: p.write_text(json.dumps(meta), encoding="utf-8"),  # type: ignore[arg-type]
         )
 
     def _read_meta(self, path: Path) -> dict | None:
@@ -444,14 +433,12 @@ class ParquetStore(DataStore):
         if not meta_path.exists():
             return None
         try:
-            return json.loads(meta_path.read_text(encoding="utf-8"))
+            return json.loads(meta_path.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
         except Exception:
             return None
 
     @staticmethod
-    def _filter_by_date(
-        df: pd.DataFrame, start: datetime.date, end: datetime.date
-    ) -> pd.DataFrame:
+    def _filter_by_date(df: pd.DataFrame, start: datetime.date, end: datetime.date) -> pd.DataFrame:
         """Filter a DataFrame that has a 'date' column or DatetimeIndex."""
         if df.empty:
             return df
@@ -461,7 +448,7 @@ class ParquetStore(DataStore):
             return df[mask].copy()
         if isinstance(df.index, pd.DatetimeIndex):
             idx_dates = df.index.tz_convert("UTC").date
-            mask = (idx_dates >= start) & (idx_dates <= end)
+            mask = (idx_dates >= start) & (idx_dates <= end)  # type: ignore[assignment]
             return df[mask].copy()
         return df
 

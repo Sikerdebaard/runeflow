@@ -3,12 +3,13 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Services public API."""
-from .update_data import UpdateDataService
-from .train import TrainService
-from .warmup import WarmupService
-from .inference import InferenceService
+
 from .export_tariffs import ExportTariffsService
+from .inference import InferenceService
 from .plot import PlotService
+from .train import TrainService
+from .update_data import UpdateDataService
+from .warmup import WarmupService
 
 __all__ = [
     "UpdateDataService",

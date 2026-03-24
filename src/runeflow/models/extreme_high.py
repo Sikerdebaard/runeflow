@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Extreme-High (spike) model — XGBoost quantile α=0.90."""
+
 from __future__ import annotations
 
 import logging
@@ -119,7 +120,11 @@ class ExtremeHighModel(ModelPort):
         return pd.DataFrame({"prediction": pred}, index=X.index)
 
     def save(self, store: DataStore, zone: str) -> None:
-        store.save_model(pickle.dumps({"model": self._model, "metrics": self._metrics}), zone, self.name)
+        store.save_model(
+            pickle.dumps({"model": self._model, "metrics": self._metrics}),
+            zone,
+            self.name,
+        )
 
     def load(self, store: DataStore, zone: str) -> bool:
         raw = store.load_model(zone, self.name)

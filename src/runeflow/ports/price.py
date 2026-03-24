@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """PricePort — abstract interface for electricity price adapters."""
+
 from __future__ import annotations
 
 import datetime

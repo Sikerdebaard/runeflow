@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Tests for ConditionGatedStrategy and SimpleWeightedStrategy."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -10,11 +11,11 @@ import pandas as pd
 import pytest
 
 from runeflow.ensemble.condition_gated import ConditionGatedStrategy
-from runeflow.ensemble.simple_weighted import SimpleWeightedStrategy
 from runeflow.ensemble.registry import ENSEMBLE_REGISTRY
-
+from runeflow.ensemble.simple_weighted import SimpleWeightedStrategy
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _pred_df(n: int, value: float, idx=None) -> pd.DataFrame:
     """Return a predictions DataFrame with prediction/lower/upper columns."""
@@ -44,6 +45,7 @@ def _feature_df(n: int, evening_peak: bool = False, solar_midday: bool = False) 
 
 
 # ── ConditionGatedStrategy ────────────────────────────────────────────────────
+
 
 class TestConditionGatedStrategy:
     def test_name(self):
@@ -86,8 +88,7 @@ class TestConditionGatedStrategy:
         strategy = ConditionGatedStrategy()
         preds = {"xgboost_quantile": _pred_df(n, 55.0, idx)}
         features = pd.DataFrame(
-            {"is_evening_peak": 0, "is_solar_midday": 0,
-             "is_solar_cliff": 0, "is_night_valley": 0},
+            {"is_evening_peak": 0, "is_solar_midday": 0, "is_solar_cliff": 0, "is_night_valley": 0},
             index=idx,
         )
         out = strategy.combine(preds, features)
@@ -165,13 +166,11 @@ class TestConditionGatedStrategy:
 
 # ── SimpleWeightedStrategy ────────────────────────────────────────────────────
 
+
 class TestSimpleWeightedStrategy:
     @pytest.fixture()
     def strategy(self):
-        from runeflow.ensemble.simple_weighted import SimpleWeightedStrategy
-        return SimpleWeightedStrategy(
-            weights={"xgboost_quantile": 0.6, "extreme_high": 0.4}
-        )
+        return SimpleWeightedStrategy(weights={"xgboost_quantile": 0.6, "extreme_high": 0.4})
 
     def test_name(self, strategy):
         assert strategy.name == "simple_weighted"
@@ -208,6 +207,7 @@ class TestSimpleWeightedStrategy:
 
 # ── Ensemble Registry ─────────────────────────────────────────────────────────
 
+
 class TestEnsembleRegistry:
     def test_contains_condition_gated(self):
         assert "condition_gated" in ENSEMBLE_REGISTRY
@@ -216,7 +216,7 @@ class TestEnsembleRegistry:
         assert "simple_weighted" in ENSEMBLE_REGISTRY
 
     def test_factories_return_strategy(self):
-        for name, factory in ENSEMBLE_REGISTRY.items():
+        for _name, factory in ENSEMBLE_REGISTRY.items():
             obj = factory()
             assert hasattr(obj, "combine")
             assert hasattr(obj, "name")
