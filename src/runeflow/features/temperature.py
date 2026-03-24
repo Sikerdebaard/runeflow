@@ -3,12 +3,14 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Temperature feature group."""
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 _HEATING_BASE = 15.5

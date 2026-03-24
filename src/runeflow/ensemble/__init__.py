@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Ensemble public API."""
+
 from .registry import ENSEMBLE_REGISTRY, ConditionGatedStrategy, SimpleWeightedStrategy
 
 __all__ = ["ENSEMBLE_REGISTRY", "ConditionGatedStrategy", "SimpleWeightedStrategy"]

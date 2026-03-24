@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """EnsembleStrategy — abstract interface for ensemble combination logic."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

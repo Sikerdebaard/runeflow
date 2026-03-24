@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """DataStore — abstract interface for persistent storage."""
+
 from __future__ import annotations
 
 import datetime
@@ -54,9 +55,7 @@ class DataStore(ABC):
     def load_forecast_weather(self, zone: str) -> WeatherSeries | None: ...
 
     @abstractmethod
-    def load_forecast_weather_ensemble(
-        self, zone: str, member: int
-    ) -> WeatherSeries | None: ...
+    def load_forecast_weather_ensemble(self, zone: str, member: int) -> WeatherSeries | None: ...
 
     @abstractmethod
     def is_forecast_weather_fresh(
@@ -83,14 +82,10 @@ class DataStore(ABC):
     # ── Supplemental ──────────────────────────────────────────────────────────
 
     @abstractmethod
-    def save_supplemental(
-        self, df: pd.DataFrame, zone: str, key: str
-    ) -> None: ...
+    def save_supplemental(self, df: pd.DataFrame, zone: str, key: str) -> None: ...
 
     @abstractmethod
-    def load_supplemental(
-        self, zone: str, key: str
-    ) -> pd.DataFrame | None: ...
+    def load_supplemental(self, zone: str, key: str) -> pd.DataFrame | None: ...
 
     # ── Model Artifacts ───────────────────────────────────────────────────────
 

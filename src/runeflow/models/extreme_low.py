@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Extreme-Low (dip) model — XGBoost quantile α=0.10."""
+
 from __future__ import annotations
 
 import logging
@@ -84,7 +85,9 @@ class ExtremeLowModel(ModelPort):
         logger.info("Training ExtremeLowModel (α=%.2f)…", self.QUANTILE_ALPHA)
 
         dip_weights = self._compute_weights(y_train.to_numpy())
-        combined = dip_weights * sample_weight.to_numpy() if sample_weight is not None else dip_weights
+        combined = (
+            dip_weights * sample_weight.to_numpy() if sample_weight is not None else dip_weights
+        )
 
         self._model = xgb.XGBRegressor(
             objective="reg:quantileerror",
@@ -116,7 +119,11 @@ class ExtremeLowModel(ModelPort):
         return pd.DataFrame({"prediction": pred}, index=X.index)
 
     def save(self, store: DataStore, zone: str) -> None:
-        store.save_model(pickle.dumps({"model": self._model, "metrics": self._metrics}), zone, self.name)
+        store.save_model(
+            pickle.dumps({"model": self._model, "metrics": self._metrics}),
+            zone,
+            self.name,
+        )
 
     def load(self, store: DataStore, zone: str) -> bool:
         raw = store.load_model(zone, self.name)

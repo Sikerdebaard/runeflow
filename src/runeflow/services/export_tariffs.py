@@ -10,18 +10,17 @@ Actual ENTSO-E prices (yesterday + today + day-ahead) are spliced in
 where available so the first hours of the export use known market data
 rather than model predictions.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 
 import inject
 import pandas as pd
 
 from runeflow.domain.tariff import TariffRateSlot
-from runeflow.domain.forecast import ForecastResult
 from runeflow.ports.price import PricePort
 from runeflow.ports.store import DataStore
 from runeflow.zones.config import ZoneConfig
@@ -38,14 +37,14 @@ class ExportTariffsService:
     @inject.autoparams()
     def __init__(
         self,
-        zone_cfg: ZoneConfig = inject.attr("zone_config"),
-        store: DataStore = inject.attr(DataStore),
+        zone_cfg: ZoneConfig = inject.attr("zone_config"),  # type: ignore[assignment]  # noqa: B008
+        store: DataStore = inject.attr(DataStore),  # type: ignore[assignment]  # noqa: B008
     ) -> None:
         self._zone_cfg = zone_cfg
         self._store = store
         # Optional price adapter (for actual/day-ahead splicing)
         try:
-            self._price_port: PricePort | None = inject.instance(PricePort)
+            self._price_port: PricePort | None = inject.instance(PricePort)  # type: ignore[assignment]
         except inject.InjectorException:
             self._price_port = None
 
@@ -66,8 +65,7 @@ class ExportTariffsService:
         if tariff_formula is None:
             available = list(self._zone_cfg.tariff_formulas.keys())
             raise ValueError(
-                f"Provider '{provider}' not found for zone={zone}. "
-                f"Available: {available}"
+                f"Provider '{provider}' not found for zone={zone}. Available: {available}"
             )
 
         # Build forecast price map (timestamp → EUR/MWh wholesale)
@@ -89,11 +87,13 @@ class ExportTariffsService:
             price_kwh_wholesale = price_mwh / 1000.0  # EUR/MWh → EUR/kWh
             price_kwh = tariff_formula.apply(price_kwh_wholesale, ts.date())
             end_ts = ts + pd.Timedelta(hours=1)
-            slots.append(TariffRateSlot(
-                start=ts.isoformat(),
-                end=end_ts.isoformat(),
-                price=round(price_kwh, 6),
-            ))
+            slots.append(
+                TariffRateSlot(
+                    start=ts.isoformat(),
+                    end=end_ts.isoformat(),
+                    price=round(price_kwh, 6),
+                )
+            )
 
         if output_path is None:
             output_path = Path(f"tariffs_{zone.lower()}.json")
@@ -115,7 +115,6 @@ class ExportTariffsService:
     # ------------------------------------------------------------------
     def _load_actual_prices(self, zone: str) -> dict[pd.Timestamp, float]:
         """Fetch yesterday + today + day-ahead actual ENTSO-E prices."""
-        import datetime as dt_mod
 
         prices: dict[pd.Timestamp, float] = {}
         now_utc = pd.Timestamp.now("UTC").floor("h")
@@ -125,16 +124,16 @@ class ExportTariffsService:
         price_series = self._store.load_prices(zone)
         if price_series is not None:
             df = price_series.to_dataframe()
-            if df.index.tz is None:
-                df.index = df.index.tz_localize("UTC")
+            if df.index.tz is None:  # type: ignore[attr-defined]
+                df.index = df.index.tz_localize("UTC")  # type: ignore[attr-defined]
             else:
-                df.index = df.index.tz_convert("UTC")
+                df.index = df.index.tz_convert("UTC")  # type: ignore[attr-defined]
             price_col = "Price_EUR_MWh" if "Price_EUR_MWh" in df.columns else df.columns[0]
             # Resample to hourly (NL has 15-min settlement since 2023)
             df_h = df[[price_col]].resample("1h").mean().dropna()
             recent = df_h[df_h.index >= yesterday]
             for ts, row in recent.iterrows():
-                prices[pd.Timestamp(ts)] = float(row[price_col])
+                prices[pd.Timestamp(ts)] = float(row[price_col])  # type: ignore[arg-type]
 
         # Try downloading day-ahead prices if price port is available
         if self._price_port is not None:
@@ -142,15 +141,17 @@ class ExportTariffsService:
                 da = self._price_port.download_day_ahead(zone)
                 if da is not None:
                     da_df = da.to_dataframe()
-                    if da_df.index.tz is None:
-                        da_df.index = da_df.index.tz_localize("UTC")
+                    if da_df.index.tz is None:  # type: ignore[attr-defined]
+                        da_df.index = da_df.index.tz_localize("UTC")  # type: ignore[attr-defined]
                     else:
-                        da_df.index = da_df.index.tz_convert("UTC")
-                    da_col = "Price_EUR_MWh" if "Price_EUR_MWh" in da_df.columns else da_df.columns[0]
+                        da_df.index = da_df.index.tz_convert("UTC")  # type: ignore[attr-defined]
+                    da_col = (
+                        "Price_EUR_MWh" if "Price_EUR_MWh" in da_df.columns else da_df.columns[0]
+                    )
                     # Resample to hourly to match production
                     da_df = da_df[[da_col]].resample("1h").mean().dropna()
                     for ts, row in da_df.iterrows():
-                        prices[pd.Timestamp(ts)] = float(row[da_col])
+                        prices[pd.Timestamp(ts)] = float(row[da_col])  # type: ignore[arg-type]
                     logger.info("Day-ahead prices: %d hours", len(da_df))
             except Exception as exc:
                 logger.debug("Day-ahead prices not yet available: %s", exc)

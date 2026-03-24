@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Per-country tariff formula registries."""
+
 from __future__ import annotations
 
 from runeflow.domain.tariff import TariffFormula

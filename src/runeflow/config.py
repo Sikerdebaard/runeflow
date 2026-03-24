@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Application configuration loaded from environment variables."""
+
 from __future__ import annotations
 
 import os
@@ -113,7 +114,7 @@ class AppConfig(BaseSettings):
         cls,
         env: dict[str, str] | None = None,
         zone: str | None = None,
-    ) -> "AppConfig":
+    ) -> AppConfig:
         """
         Create an AppConfig from a custom env dict.
 
@@ -135,4 +136,4 @@ class AppConfig(BaseSettings):
             if env_key in env:
                 overrides[field_name] = env[env_key]
 
-        return cls(**overrides)
+        return cls(**overrides)  # type: ignore[arg-type]

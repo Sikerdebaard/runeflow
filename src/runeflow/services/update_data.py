@@ -7,20 +7,21 @@ UpdateDataService — downloads and caches prices, weather, generation, suppleme
 
 All ports are injected via @inject.autoparams().
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 import inject
 import pandas as pd
 
-from runeflow.ports.price import PricePort
-from runeflow.ports.weather import WeatherPort
 from runeflow.ports.generation import GenerationPort
-from runeflow.ports.supplemental import SupplementalDataPort
+from runeflow.ports.price import PricePort
 from runeflow.ports.store import DataStore
+from runeflow.ports.supplemental import SupplementalDataPort
 from runeflow.ports.validator import DataValidator
+from runeflow.ports.weather import WeatherPort
 from runeflow.zones.config import ZoneConfig
 
 logger = logging.getLogger(__name__)
@@ -32,11 +33,11 @@ class UpdateDataService:
     @inject.autoparams()
     def __init__(
         self,
-        zone_cfg: ZoneConfig = inject.attr("zone_config"),
-        price_port: PricePort = inject.attr(PricePort),
-        weather_port: WeatherPort = inject.attr(WeatherPort),
-        store: DataStore = inject.attr(DataStore),
-        validator: DataValidator = inject.attr(DataValidator),
+        zone_cfg: ZoneConfig = inject.attr("zone_config"),  # type: ignore[assignment]  # noqa: B008
+        price_port: PricePort = inject.attr(PricePort),  # type: ignore[assignment]  # noqa: B008
+        weather_port: WeatherPort = inject.attr(WeatherPort),  # type: ignore[assignment]  # noqa: B008, E501
+        store: DataStore = inject.attr(DataStore),  # type: ignore[assignment]  # noqa: B008
+        validator: DataValidator = inject.attr(DataValidator),  # type: ignore[assignment]  # noqa: B008, E501
     ) -> None:
         self._zone_cfg = zone_cfg
         self._price_port = price_port
@@ -45,11 +46,13 @@ class UpdateDataService:
         self._validator = validator
         # Optional ports — may not be bound
         try:
-            self._generation_port: GenerationPort | None = inject.instance(GenerationPort)
+            self._generation_port: GenerationPort | None = inject.instance(GenerationPort)  # type: ignore[assignment]
         except Exception:
             self._generation_port = None
         try:
-            self._supplemental_port: SupplementalDataPort | None = inject.instance(SupplementalDataPort)
+            self._supplemental_port: SupplementalDataPort | None = inject.instance(
+                SupplementalDataPort
+            )  # type: ignore[assignment]
         except Exception:
             self._supplemental_port = None
 
@@ -74,7 +77,7 @@ class UpdateDataService:
 
         existing = self._store.load_prices(zone)
         if existing is not None:
-            existing_end = existing.date_range()[1]
+            existing_end = existing.date_range()[1]  # type: ignore[index]
             # Only fetch missing period — ensure tz-aware comparison
             gap_start = pd.Timestamp(existing_end, tz="UTC") + pd.Timedelta(hours=1)
             if gap_start >= end:
@@ -84,7 +87,7 @@ class UpdateDataService:
 
         series = self._price_port.download_historical(zone, start, end)
         df = series.to_dataframe()
-        result = self._validator.validate(df, {"zone": zone, "check": "prices"})
+        result = self._validator.validate(df, {"zone": zone, "check": "prices"})  # type: ignore[arg-type]
         if not result.passed:
             logger.warning("Price validation warnings: %s", result.warnings)
         self._store.save_prices(series)
@@ -100,9 +103,7 @@ class UpdateDataService:
         self._store.save_weather(series, zone)
 
         logger.info("Downloading weather forecast")
-        forecast = self._weather_port.download_forecast(
-            locations, horizon_days=9
-        )
+        forecast = self._weather_port.download_forecast(locations, horizon_days=9)
         self._store.save_forecast_weather(forecast, zone)
 
         # Ensemble (optional — best-effort)

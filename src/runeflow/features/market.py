@@ -3,11 +3,13 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Market structure and temporal interaction feature group."""
+
 from __future__ import annotations
 
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 
@@ -44,13 +46,13 @@ class MarketStructureFeatures(FeatureGroup):
                 df["month"].isin([6, 7, 8]) & df["is_peak_hour"].astype(bool)
             ).astype(int)
             df["winter_evening"] = (
-                df["month"].isin([12, 1, 2])
-                & df["hour_of_day"].isin([17, 18, 19])
+                df["month"].isin([12, 1, 2]) & df["hour_of_day"].isin([17, 18, 19])
             ).astype(int)
 
         # Weather volatility index
         weather_features = [
-            c for c in df.columns
+            c
+            for c in df.columns
             if any(x in c.lower() for x in ["temp", "wind", "precip", "cloud"])
         ]
         if len(weather_features) >= 3:

@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Tests for services/plot.py — helper methods and full run with mocked deps."""
+
 from __future__ import annotations
 
-import datetime
 import pickle
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, PropertyMock
 
 import matplotlib
+
 matplotlib.use("Agg")  # headless backend
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,7 +15,6 @@ import pandas as pd
 import pytest
 
 from runeflow.domain.forecast import ForecastPoint, ForecastResult
-
 
 # ---------------------------------------------------------------------------
 # PlotService static helpers
@@ -24,6 +24,7 @@ from runeflow.domain.forecast import ForecastPoint, ForecastResult
 class TestStyleAxis:
     def test_style_axis_does_not_raise(self):
         import matplotlib.dates as mdates
+
         from runeflow.services.plot import _style_axis
 
         fig, ax = plt.subplots()
@@ -67,6 +68,7 @@ class TestAnnotateExtremes:
 # ---------------------------------------------------------------------------
 # _composite_grade
 # ---------------------------------------------------------------------------
+
 
 class TestCompositeGrade:
     def test_excellent_score(self):
@@ -129,24 +131,26 @@ class TestCompositeGrade:
 # _compute_live_metrics
 # ---------------------------------------------------------------------------
 
+
 class TestComputeLiveMetrics:
     def test_with_actual_data_calculates_mae(self):
         from runeflow.services.plot import PlotService
 
         idx = pd.date_range("2024-01-01", periods=10, freq="h", tz="UTC")
-        df = pd.DataFrame({
-            "ensemble_p50": np.linspace(50, 60, 10),
-            "lower": np.linspace(40, 50, 10),
-            "upper": np.linspace(60, 70, 10),
-            "model_agreement": [0.8] * 10,
-        }, index=idx)
+        df = pd.DataFrame(
+            {
+                "ensemble_p50": np.linspace(50, 60, 10),
+                "lower": np.linspace(40, 50, 10),
+                "upper": np.linspace(60, 70, 10),
+                "model_agreement": [0.8] * 10,
+            },
+            index=idx,
+        )
 
         df_actual = pd.Series(np.linspace(50, 60, 10) + 1.0, index=idx)
 
         forecast = MagicMock()
-        forecast.ensemble_members = pd.DataFrame(
-            {"m0": [50.0] * 10, "m1": [55.0] * 10}, index=idx
-        )
+        forecast.ensemble_members = pd.DataFrame({"m0": [50.0] * 10, "m1": [55.0] * 10}, index=idx)
 
         m = PlotService._compute_live_metrics(df, df_actual, forecast)
 
@@ -162,12 +166,15 @@ class TestComputeLiveMetrics:
         from runeflow.services.plot import PlotService
 
         idx = pd.date_range("2024-01-01", periods=5, freq="h", tz="UTC")
-        df = pd.DataFrame({
-            "ensemble_p50": [50.0] * 5,
-            "lower": [40.0] * 5,
-            "upper": [60.0] * 5,
-            "model_agreement": [0.9] * 5,
-        }, index=idx)
+        df = pd.DataFrame(
+            {
+                "ensemble_p50": [50.0] * 5,
+                "lower": [40.0] * 5,
+                "upper": [60.0] * 5,
+                "model_agreement": [0.9] * 5,
+            },
+            index=idx,
+        )
 
         forecast = MagicMock()
         forecast.ensemble_members = None
@@ -193,6 +200,7 @@ class TestComputeLiveMetrics:
 # ---------------------------------------------------------------------------
 # _load_training_metrics
 # ---------------------------------------------------------------------------
+
 
 class TestLoadTrainingMetrics:
     def _make_service(self):
@@ -242,6 +250,7 @@ class TestLoadTrainingMetrics:
 # _render_scorecard
 # ---------------------------------------------------------------------------
 
+
 class TestRenderScorecard:
     def test_render_scorecard_all_badges(self):
         from runeflow.services.plot import PlotService
@@ -290,11 +299,12 @@ class TestRenderScorecard:
 # PlotService.run() — full integration with mocked deps
 # ---------------------------------------------------------------------------
 
+
 class TestPlotServiceRun:
     def _make_service_and_deps(self):
+        from runeflow.domain.tariff import TariffFormula
         from runeflow.services.plot import PlotService
         from runeflow.zones.config import ZoneConfig
-        from runeflow.domain.tariff import TariffFormula
 
         wholesale = TariffFormula(
             provider_id="wholesale",
@@ -321,19 +331,21 @@ class TestPlotServiceRun:
         idx = pd.date_range(start, periods=n, freq="h", tz="UTC")
         points = []
         for ts in idx:
-            points.append(ForecastPoint(
-                timestamp=ts,
-                prediction=50.0,
-                lower=40.0,
-                upper=60.0,
-                uncertainty=20.0,
-                model_agreement=0.9,
-                lower_static=38.0,
-                upper_static=62.0,
-                ensemble_p50=50.0,
-                ensemble_p25=45.0,
-                ensemble_p75=55.0,
-            ))
+            points.append(
+                ForecastPoint(
+                    timestamp=ts,
+                    prediction=50.0,
+                    lower=40.0,
+                    upper=60.0,
+                    uncertainty=20.0,
+                    model_agreement=0.9,
+                    lower_static=38.0,
+                    upper_static=62.0,
+                    ensemble_p50=50.0,
+                    ensemble_p25=45.0,
+                    ensemble_p75=55.0,
+                )
+            )
 
         if with_ensemble:
             ens = pd.DataFrame(
@@ -410,13 +422,14 @@ class TestPlotServiceRun:
         svc._store.load_model.return_value = None
 
         # Mock price_port to return actual prices
-        from runeflow.domain.price import PriceSeries, PriceRecord
+        from runeflow.domain.price import PriceRecord, PriceSeries
 
         start = pd.Timestamp.now(tz="UTC").normalize()
         idx = pd.date_range(start, periods=24, freq="h", tz="UTC")
         records = [PriceRecord(timestamp=ts, price_eur_mwh=50.0 + i) for i, ts in enumerate(idx)]
-        price_series = PriceSeries(zone="NL", source="test", records=tuple(records),
-                                   fetched_at=pd.Timestamp.now(tz="UTC"))
+        price_series = PriceSeries(
+            zone="NL", source="test", records=tuple(records), fetched_at=pd.Timestamp.now(tz="UTC")
+        )
         svc._price_port.download_historical.return_value = price_series
 
         out = tmp_path / "with_actual.png"
@@ -426,7 +439,6 @@ class TestPlotServiceRun:
 
     def test_run_defaults_output_path(self, tmp_path, monkeypatch):
         """When output_path is None, defaults to forecast_nl.png in cwd."""
-        import os
         monkeypatch.chdir(tmp_path)
 
         svc = self._make_service_and_deps()
@@ -441,32 +453,44 @@ class TestPlotServiceRun:
 
     def test_run_with_tz_naive_forecast(self, tmp_path):
         """Cover tz-naive branches: lines 142, 172, 240-242."""
+        from runeflow.domain.forecast import ForecastPoint, ForecastResult
+        from runeflow.domain.tariff import TariffFormula
         from runeflow.services.plot import PlotService
         from runeflow.zones.config import ZoneConfig
-        from runeflow.domain.tariff import TariffFormula
-        from runeflow.domain.forecast import ForecastResult, ForecastPoint
 
         # Build a tz-NAIVE forecast (no tz on timestamps)
         start = pd.Timestamp.now().normalize()  # no tz
         idx = pd.date_range(start, periods=48, freq="h")
         points = tuple(
             ForecastPoint(
-                timestamp=ts, prediction=50.0, lower=40.0, upper=60.0,
-                uncertainty=20.0, model_agreement=0.9,
-                lower_static=38.0, upper_static=62.0,
-                ensemble_p50=50.0, ensemble_p25=45.0, ensemble_p75=55.0,
+                timestamp=ts,
+                prediction=50.0,
+                lower=40.0,
+                upper=60.0,
+                uncertainty=20.0,
+                model_agreement=0.9,
+                lower_static=38.0,
+                upper_static=62.0,
+                ensemble_p50=50.0,
+                ensemble_p25=45.0,
+                ensemble_p75=55.0,
             )
             for ts in idx
         )
         ens = pd.DataFrame({"member_00": [50.0] * 48}, index=idx)
         forecast = ForecastResult(
-            zone="NL", points=points, ensemble_members=ens,
-            model_predictions={}, created_at=pd.Timestamp.now(),
+            zone="NL",
+            points=points,
+            ensemble_members=ens,
+            model_predictions={},
+            created_at=pd.Timestamp.now(),
             model_version="1.0",
         )
 
         wholesale = TariffFormula(
-            provider_id="wholesale", country="NL", label="Wholesale",
+            provider_id="wholesale",
+            country="NL",
+            label="Wholesale",
             apply=lambda price, date: price,
         )
         svc = PlotService.__new__(PlotService)
@@ -487,32 +511,44 @@ class TestPlotServiceRun:
 
     def test_run_tz_naive_with_actual_prices(self, tmp_path):
         """Cover line 172: tz-naive forecast + successful actual price fetch."""
+        from runeflow.domain.forecast import ForecastPoint, ForecastResult
+        from runeflow.domain.price import PriceRecord, PriceSeries
+        from runeflow.domain.tariff import TariffFormula
         from runeflow.services.plot import PlotService
         from runeflow.zones.config import ZoneConfig
-        from runeflow.domain.tariff import TariffFormula
-        from runeflow.domain.forecast import ForecastResult, ForecastPoint
-        from runeflow.domain.price import PriceSeries, PriceRecord
 
         # tz-NAIVE forecast
         start = pd.Timestamp.now().normalize()
         idx = pd.date_range(start, periods=24, freq="h")
         points = tuple(
             ForecastPoint(
-                timestamp=ts, prediction=50.0, lower=40.0, upper=60.0,
-                uncertainty=20.0, model_agreement=0.9,
-                lower_static=38.0, upper_static=62.0,
-                ensemble_p50=50.0, ensemble_p25=45.0, ensemble_p75=55.0,
+                timestamp=ts,
+                prediction=50.0,
+                lower=40.0,
+                upper=60.0,
+                uncertainty=20.0,
+                model_agreement=0.9,
+                lower_static=38.0,
+                upper_static=62.0,
+                ensemble_p50=50.0,
+                ensemble_p25=45.0,
+                ensemble_p75=55.0,
             )
             for ts in idx
         )
         forecast = ForecastResult(
-            zone="NL", points=points, ensemble_members=pd.DataFrame(index=idx),
-            model_predictions={}, created_at=pd.Timestamp.now(),
+            zone="NL",
+            points=points,
+            ensemble_members=pd.DataFrame(index=idx),
+            model_predictions={},
+            created_at=pd.Timestamp.now(),
             model_version="1.0",
         )
 
         wholesale = TariffFormula(
-            provider_id="wholesale", country="NL", label="Wholesale",
+            provider_id="wholesale",
+            country="NL",
+            label="Wholesale",
             apply=lambda price, date: price,
         )
         svc = PlotService.__new__(PlotService)
@@ -527,11 +563,12 @@ class TestPlotServiceRun:
         # Return actual prices (tz-aware UTC) — triggers line 172 tz_localize(None)
         price_idx = pd.date_range(start, periods=12, freq="h", tz="UTC")
         records = tuple(
-            PriceRecord(timestamp=ts, price_eur_mwh=50.0 + i)
-            for i, ts in enumerate(price_idx)
+            PriceRecord(timestamp=ts, price_eur_mwh=50.0 + i) for i, ts in enumerate(price_idx)
         )
         price_series = PriceSeries(
-            zone="NL", source="test", records=records,
+            zone="NL",
+            source="test",
+            records=records,
             fetched_at=pd.Timestamp.now(tz="UTC"),
         )
         svc._price_port = MagicMock()
@@ -582,6 +619,7 @@ class TestPlotServiceRun:
     def test_init_via_inject(self):
         """Cover lines 105-107: __init__ through inject."""
         import inject
+
         from runeflow.services.plot import PlotService
         from runeflow.zones.config import ZoneConfig
 
@@ -592,8 +630,9 @@ class TestPlotServiceRun:
         def _binder(binder):
             binder.bind("zone_config", zone_cfg)
             binder.bind(ZoneConfig, zone_cfg)
-            from runeflow.ports.store import DataStore
             from runeflow.ports.price import PricePort
+            from runeflow.ports.store import DataStore
+
             binder.bind(DataStore, store)
             binder.bind(PricePort, price_port)
 

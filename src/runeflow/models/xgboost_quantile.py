@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """XGBoost quantile regression model (P1 / P50 / P99 + conformal calibration)."""
+
 from __future__ import annotations
 
 import logging
@@ -92,7 +93,11 @@ class XGBoostQuantileModel(ModelPort):
         )
         fit_kw: dict[str, Any] = {}
         if sample_weight is not None:
-            sw = sample_weight.to_numpy() if hasattr(sample_weight, "to_numpy") else np.asarray(sample_weight)
+            sw = (
+                sample_weight.to_numpy()
+                if hasattr(sample_weight, "to_numpy")
+                else np.asarray(sample_weight)
+            )
             fit_kw["sample_weight"] = sw
 
         if X_val is not None and len(X_val) > 0:
@@ -120,9 +125,7 @@ class XGBoostQuantileModel(ModelPort):
         adj_upper = max(0.0, float(np.quantile(upper_scores, q_level)))
 
         for _ in range(5):
-            covered = (
-                (actual >= pred_lower - adj_lower) & (actual <= pred_upper + adj_upper)
-            )
+            covered = (actual >= pred_lower - adj_lower) & (actual <= pred_upper + adj_upper)
             if covered.mean() >= self._TARGET_COVERAGE:
                 break
             gap = self._TARGET_COVERAGE - covered.mean()
@@ -144,14 +147,24 @@ class XGBoostQuantileModel(ModelPort):
         logger.info("Training XGBoostQuantileModel (P1 / P50 / P99)…")
 
         self._model_lower = self._train_single(
-            self._BASE_QUANTILE_LOWER, X_train, y_train, X_val, y_val, sample_weight,
+            self._BASE_QUANTILE_LOWER,
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            sample_weight,
             self.TAIL_PARAMS,
         )
         self._model_p50 = self._train_single(
             0.50, X_train, y_train, X_val, y_val, sample_weight, self.BEST_PARAMS
         )
         self._model_upper = self._train_single(
-            self._BASE_QUANTILE_UPPER, X_train, y_train, X_val, y_val, sample_weight,
+            self._BASE_QUANTILE_UPPER,
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            sample_weight,
             self.TAIL_PARAMS,
         )
 
@@ -178,7 +191,9 @@ class XGBoostQuantileModel(ModelPort):
             }
             logger.info(
                 "  MAE=%.4f  R²=%.4f  Coverage=%.1f%%",
-                self._metrics["mae"], self._metrics["r2"], coverage,
+                self._metrics["mae"],
+                self._metrics["r2"],
+                coverage,
             )
 
         self._trained = True

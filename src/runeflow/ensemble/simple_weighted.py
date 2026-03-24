@@ -3,10 +3,11 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Simple fixed-weight ensemble strategy (fallback / baseline)."""
+
 from __future__ import annotations
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from runeflow.ports.ensemble import EnsembleStrategy
 
@@ -37,12 +38,10 @@ class SimpleWeightedStrategy(EnsembleStrategy):
 
         preds = {k: v["prediction"].to_numpy() for k, v in predictions.items()}
         names = list(preds.keys())
-        weights = np.array(
-            [self._weights.get(n, 1.0) for n in names], dtype=float
-        )
+        weights = np.array([self._weights.get(n, 1.0) for n in names], dtype=float)
         weights = weights / weights.sum()
 
-        combined = sum(w * preds[n] for w, n in zip(weights, names))
+        combined = sum(w * preds[n] for w, n in zip(weights, names, strict=False))
 
         # Intervals from xgboost_quantile or spread
         if "xgboost_quantile" in predictions:

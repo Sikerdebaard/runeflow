@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """ModelPort — abstract interface for prediction models."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -38,11 +39,11 @@ class ModelPort(ABC):
         """Return DataFrame with model-specific prediction columns."""
 
     @abstractmethod
-    def save(self, store: "DataStore", zone: str) -> None:
+    def save(self, store: DataStore, zone: str) -> None:
         """Persist model artifacts via a DataStore."""
 
     @abstractmethod
-    def load(self, store: "DataStore", zone: str) -> bool:
+    def load(self, store: DataStore, zone: str) -> bool:
         """Load model artifacts; return True on success."""
 
     @property

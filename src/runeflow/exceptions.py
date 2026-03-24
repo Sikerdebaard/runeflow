@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Application exception hierarchy."""
+
 from __future__ import annotations
 
 
@@ -11,6 +12,7 @@ class RuneflowError(Exception):
 
 
 # ── Adapter errors ────────────────────────────────────────────────────────────
+
 
 class AdapterError(RuneflowError):
     """Base class for adapter (I/O) errors."""
@@ -34,6 +36,7 @@ class AuthenticationError(AdapterError):
 
 # ── Zone errors ───────────────────────────────────────────────────────────────
 
+
 class ZoneError(RuneflowError):
     """Base class for zone configuration errors."""
 
@@ -44,17 +47,20 @@ class UnsupportedZoneError(ZoneError):
 
 # ── Validation errors ─────────────────────────────────────────────────────────
 
+
 class ValidationError(RuneflowError):
     """Data quality check failed."""
 
 
 # ── Config errors ─────────────────────────────────────────────────────────────
 
+
 class ConfigError(RuneflowError):
     """Invalid application configuration."""
 
 
 # ── Model errors ──────────────────────────────────────────────────────────────
+
 
 class ModelError(RuneflowError):
     """Base class for ML model errors."""

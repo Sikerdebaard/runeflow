@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Holiday feature group using the `holidays` package."""
+
 from __future__ import annotations
 
 import logging
@@ -11,6 +12,7 @@ import holidays as hols
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,7 @@ class HolidayFeatures(FeatureGroup):
         df = self._copy(df)
 
         country = zone_cfg.workalendar_country
-        years = sorted(int(y) for y in df.index.year.unique() if pd.notna(y))
+        years = sorted(int(y) for y in df.index.year.unique() if pd.notna(y))  # type: ignore[attr-defined]
 
         # Build holiday set year-by-year, skipping any years the package chokes on.
         holiday_dates: set = set()
@@ -71,8 +73,6 @@ class HolidayFeatures(FeatureGroup):
         # Proximity effects
         df["holiday_tomorrow"] = df["is_holiday"].shift(-24).fillna(0).astype(int)
         df["holiday_yesterday"] = df["is_holiday"].shift(24).fillna(0).astype(int)
-        df["holiday_week"] = (
-            df["is_holiday"].rolling(168, min_periods=1, center=True).max()
-        )
+        df["holiday_week"] = df["is_holiday"].rolling(168, min_periods=1, center=True).max()
 
         return df

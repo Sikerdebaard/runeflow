@@ -3,25 +3,28 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Tests for ParquetStore (price / model save-load, TTL, atomic writes)."""
+
 from __future__ import annotations
 
 import datetime
-from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from runeflow.adapters.store.parquet import ParquetStore
+from runeflow.domain.forecast import ForecastPoint, ForecastResult
+from runeflow.domain.generation import GenerationSeries
 from runeflow.domain.price import PriceRecord, PriceSeries
-
+from runeflow.domain.weather import WeatherSeries
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_price_series(zone: str = "NL", n: int = 48) -> PriceSeries:
     ts = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
     records = tuple(
-        PriceRecord(timestamp=t, price_eur_mwh=float(50 + i % 20))
-        for i, t in enumerate(ts)
+        PriceRecord(timestamp=t, price_eur_mwh=float(50 + i % 20)) for i, t in enumerate(ts)
     )
     return PriceSeries(
         zone=zone,
@@ -32,6 +35,7 @@ def _make_price_series(zone: str = "NL", n: int = 48) -> PriceSeries:
 
 
 # ── Save / Load Prices ────────────────────────────────────────────────────────
+
 
 class TestParquetStorePrices:
     def test_save_and_load_roundtrip(self, tmp_cache_dir):
@@ -69,8 +73,12 @@ class TestParquetStorePrices:
         recs_a = tuple(PriceRecord(t, 50.0) for t in ts_a)
         recs_b = tuple(PriceRecord(t, 60.0) for t in ts_b)
 
-        ps_a = PriceSeries(zone="NL", records=recs_a, source="x", fetched_at=pd.Timestamp.now("UTC"))
-        ps_b = PriceSeries(zone="NL", records=recs_b, source="y", fetched_at=pd.Timestamp.now("UTC"))
+        ps_a = PriceSeries(
+            zone="NL", records=recs_a, source="x", fetched_at=pd.Timestamp.now("UTC")
+        )
+        ps_b = PriceSeries(
+            zone="NL", records=recs_b, source="y", fetched_at=pd.Timestamp.now("UTC")
+        )
 
         store.save_prices(ps_a)
         store.save_prices(ps_b)
@@ -105,6 +113,7 @@ class TestParquetStorePrices:
 
 # ── Save / Load Model Artifacts ───────────────────────────────────────────────
 
+
 class TestParquetStoreModels:
     def test_save_and_load_bytes_roundtrip(self, tmp_cache_dir):
         store = ParquetStore(tmp_cache_dir)
@@ -134,15 +143,18 @@ class TestParquetStoreModels:
 
 # ── is_stale ──────────────────────────────────────────────────────────────────
 
+
 class TestParquetStoreIsStale:
     def test_missing_path_is_stale(self, tmp_cache_dir):
         import datetime
+
         store = ParquetStore(tmp_cache_dir)
         phantom = tmp_cache_dir / "does_not_exist.parquet"
         assert store.is_stale(phantom, ttl=datetime.timedelta(hours=24)) is True
 
     def test_freshly_written_is_not_stale(self, tmp_cache_dir):
         import datetime
+
         store = ParquetStore(tmp_cache_dir)
         ps = _make_price_series()
         store.save_prices(ps)
@@ -154,6 +166,7 @@ class TestParquetStoreIsStale:
 
 # ── Atomic write ──────────────────────────────────────────────────────────────
 
+
 class TestAtomicWrite:
     def test_write_creates_file(self, tmp_cache_dir):
         store = ParquetStore(tmp_cache_dir)
@@ -164,9 +177,6 @@ class TestAtomicWrite:
 
 
 # ── Save / Load Weather ──────────────────────────────────────────────────────
-
-import numpy as np
-from runeflow.domain.weather import WeatherSeries
 
 
 def _make_weather_series(n: int = 48, zone: str = "NL") -> WeatherSeries:
@@ -206,8 +216,12 @@ class TestParquetStoreWeather:
         ws1 = _make_weather_series(n=24)
         idx2 = pd.date_range("2024-01-02", periods=24, freq="h", tz="UTC")
         idx2.name = "date"
-        df2 = pd.DataFrame({"temperature_2m": [10.0] * 24, "wind_speed_10m": [3.0] * 24}, index=idx2)
-        ws2 = WeatherSeries(locations=("nl",), df=df2, source="test", fetched_at=pd.Timestamp.now("UTC"))
+        df2 = pd.DataFrame(
+            {"temperature_2m": [10.0] * 24, "wind_speed_10m": [3.0] * 24}, index=idx2
+        )
+        ws2 = WeatherSeries(
+            locations=("nl",), df=df2, source="test", fetched_at=pd.Timestamp.now("UTC")
+        )
         store.save_weather(ws1, zone="NL")
         store.save_weather(ws2, zone="NL")
 
@@ -229,7 +243,9 @@ class TestParquetStoreWeather:
         ws = _make_weather_series(n=24)
         store.save_weather(ws, zone="NL")
         # Filter to a range with no data
-        loaded = store.load_weather("NL", start=datetime.date(2020, 1, 1), end=datetime.date(2020, 1, 2))
+        loaded = store.load_weather(
+            "NL", start=datetime.date(2020, 1, 1), end=datetime.date(2020, 1, 2)
+        )
         assert loaded is None
 
 
@@ -260,7 +276,9 @@ class TestParquetStoreForecastWeather:
 
     def test_is_forecast_weather_fresh_when_missing(self, tmp_cache_dir):
         store = ParquetStore(tmp_cache_dir)
-        fresh = store.is_forecast_weather_fresh("NL", datetime.timedelta(hours=6), ["temperature_2m"])
+        fresh = store.is_forecast_weather_fresh(
+            "NL", datetime.timedelta(hours=6), ["temperature_2m"]
+        )
         assert fresh is False
 
     def test_is_forecast_weather_fresh_with_schema_match(self, tmp_cache_dir):
@@ -295,20 +313,23 @@ class TestParquetStoreForecastWeather:
     def test_is_forecast_weather_stale_old_file(self, tmp_cache_dir):
         """A file with a very old fetched_at timestamp should be stale."""
         import json
+
         store = ParquetStore(tmp_cache_dir)
         ws = _make_weather_series()
         store.save_forecast_weather(ws, zone="NL")
         # Overwrite meta to make it look old
         meta_path = store._weather_forecast_path("NL").with_suffix(".meta.json")
         old_ts = (pd.Timestamp.now("UTC") - pd.Timedelta(days=30)).isoformat()
-        meta_path.write_text(json.dumps({"fetched_at": old_ts, "weather_schema": ["temperature_2m"]}))
-        fresh = store.is_forecast_weather_fresh("NL", datetime.timedelta(hours=6), ["temperature_2m"])
+        meta_path.write_text(
+            json.dumps({"fetched_at": old_ts, "weather_schema": ["temperature_2m"]})
+        )
+        fresh = store.is_forecast_weather_fresh(
+            "NL", datetime.timedelta(hours=6), ["temperature_2m"]
+        )
         assert fresh is False
 
 
 # ── Save / Load Generation ────────────────────────────────────────────────────
-
-from runeflow.domain.generation import GenerationSeries
 
 
 def _make_generation_series(n: int = 48, zone: str = "NL") -> GenerationSeries:
@@ -359,18 +380,23 @@ class TestParquetStoreGeneration:
         store = ParquetStore(tmp_cache_dir)
         gs = _make_generation_series(n=72)
         store.save_generation(gs)
-        loaded = store.load_generation("NL", start=datetime.date(2024, 1, 1), end=datetime.date(2024, 1, 2))
+        loaded = store.load_generation(
+            "NL", start=datetime.date(2024, 1, 1), end=datetime.date(2024, 1, 2)
+        )
         assert loaded is not None
 
     def test_load_date_range_no_data_returns_none(self, tmp_cache_dir):
         store = ParquetStore(tmp_cache_dir)
         gs = _make_generation_series(n=24)
         store.save_generation(gs)
-        loaded = store.load_generation("NL", start=datetime.date(2025, 1, 1), end=datetime.date(2025, 1, 2))
+        loaded = store.load_generation(
+            "NL", start=datetime.date(2025, 1, 1), end=datetime.date(2025, 1, 2)
+        )
         assert loaded is None
 
 
 # ── Save / Load Supplemental ──────────────────────────────────────────────────
+
 
 class TestParquetStoreSupplemental:
     def _make_supp_df(self, n: int = 48) -> pd.DataFrame:
@@ -401,8 +427,6 @@ class TestParquetStoreSupplemental:
 
 
 # ── Save / Load Forecast ──────────────────────────────────────────────────────
-
-from runeflow.domain.forecast import ForecastPoint, ForecastResult
 
 
 def _make_forecast_result(zone: str = "NL", n: int = 24) -> ForecastResult:
@@ -457,14 +481,24 @@ class TestParquetStoreForecast:
         store = ParquetStore(tmp_cache_dir)
         ts = pd.date_range("2024-01-01", periods=12, freq="h", tz="UTC")
         points = tuple(
-            ForecastPoint(timestamp=t, prediction=50.0, lower=30.0, upper=70.0,
-                          uncertainty=40.0, model_agreement=0.9) for t in ts
+            ForecastPoint(
+                timestamp=t,
+                prediction=50.0,
+                lower=30.0,
+                upper=70.0,
+                uncertainty=40.0,
+                model_agreement=0.9,
+            )
+            for t in ts
         )
         ens = pd.DataFrame({"m0": [50.0] * 12, "m1": [52.0] * 12}, index=ts)
         result = ForecastResult(
-            zone="NL", points=points, ensemble_members=ens,
+            zone="NL",
+            points=points,
+            ensemble_members=ens,
             model_predictions={"xgboost": pd.Series([50.0] * 12, index=ts)},
-            created_at=pd.Timestamp.now("UTC"), model_version="1.0",
+            created_at=pd.Timestamp.now("UTC"),
+            model_version="1.0",
         )
         store.save_forecast(result)
         loaded = store.load_latest_forecast("NL")
@@ -473,6 +507,7 @@ class TestParquetStoreForecast:
 
 
 # ── Save / Load Warmup Cache ──────────────────────────────────────────────────
+
 
 class TestParquetStoreWarmupCache:
     def test_save_and_load_roundtrip(self, tmp_cache_dir):
@@ -504,10 +539,12 @@ class TestParquetStoreWarmupCache:
 
 # ── Staleness Edge Cases ──────────────────────────────────────────────────────
 
+
 class TestParquetStoreIsStaleEdgeCases:
     def test_stale_when_meta_missing_fetched_at_key(self, tmp_cache_dir):
         """Meta file exists but has no fetched_at → exception → returns True (stale)."""
         import json
+
         store = ParquetStore(tmp_cache_dir)
         ps = _make_price_series()
         store.save_prices(ps)
@@ -515,7 +552,10 @@ class TestParquetStoreIsStaleEdgeCases:
         meta_files = list((tmp_cache_dir / "prices").rglob("*.meta.json"))
         assert meta_files
         meta_files[0].write_text(json.dumps({"zone": "NL", "source": "test"}))
-        assert store.is_stale(meta_files[0].with_suffix(".parquet"), datetime.timedelta(hours=1)) is True
+        assert (
+            store.is_stale(meta_files[0].with_suffix(".parquet"), datetime.timedelta(hours=1))
+            is True
+        )
 
     def test_not_stale_for_fresh_weather(self, tmp_cache_dir):
         store = ParquetStore(tmp_cache_dir)
@@ -526,6 +566,7 @@ class TestParquetStoreIsStaleEdgeCases:
 
 
 # ── Internal Helpers ──────────────────────────────────────────────────────────
+
 
 class TestParquetStoreInternals:
     def test_read_parquet_corrupt_file_returns_none(self, tmp_cache_dir):
@@ -547,6 +588,7 @@ class TestParquetStoreInternals:
     def test_atomic_write_cleans_up_on_failure(self, tmp_cache_dir):
         """_atomic_write removes the temp file and re-raises when write_fn raises."""
         from runeflow.adapters.store.parquet import _atomic_write
+
         target = tmp_cache_dir / "target.txt"
 
         def _failing_write(tmp):
@@ -580,7 +622,6 @@ class TestParquetStoreInternals:
 
     def test_is_stale_no_meta_file(self, tmp_cache_dir):
         """is_stale returns True when meta file does not exist alongside file."""
-        import json
         store = ParquetStore(tmp_cache_dir)
         # Create the parquet file but no .meta.json
         p = tmp_cache_dir / "orphan.parquet"
@@ -588,8 +629,8 @@ class TestParquetStoreInternals:
         assert store.is_stale(p, datetime.timedelta(hours=1)) is True
 
 
-
 # ── Additional coverage for parquet.py missing lines ──────────────────────────
+
 
 class TestParquetAdditionalCoverage:
     """Targeted tests for parquet.py lines 154, 158, 376-377, 466."""
@@ -608,7 +649,6 @@ class TestParquetAdditionalCoverage:
           - meta is None → line 154 (return False)
           - meta has empty weather_schema → line 158 (return False)
         """
-        import json
         from unittest.mock import patch
 
         store2 = ParquetStore(tmp_path / "fresh")
@@ -618,11 +658,13 @@ class TestParquetAdditionalCoverage:
         pd.DataFrame({"temperature_2m": [10.0]}).to_parquet(path, index=False)
 
         # --- Sub-case 1: meta returns None (line 154) ---
-        with patch.object(type(store2), "is_stale", return_value=False):
-            with patch.object(store2, "_read_meta", return_value=None):
-                r1 = store2.is_forecast_weather_fresh(
-                    zone, ["temperature_2m"], datetime.timedelta(hours=1)
-                )
+        with (
+            patch.object(type(store2), "is_stale", return_value=False),
+            patch.object(store2, "_read_meta", return_value=None),
+        ):
+            r1 = store2.is_forecast_weather_fresh(
+                zone, ["temperature_2m"], datetime.timedelta(hours=1)
+            )
         assert r1 is False  # line 154: if meta is None: return False
 
         # --- Sub-case 2: meta has empty schema (line 158) ---
@@ -630,11 +672,13 @@ class TestParquetAdditionalCoverage:
             "fetched_at": pd.Timestamp.now("UTC").isoformat(),
             "weather_schema": [],
         }
-        with patch.object(type(store2), "is_stale", return_value=False):
-            with patch.object(store2, "_read_meta", return_value=empty_schema_meta):
-                r2 = store2.is_forecast_weather_fresh(
-                    zone, ["temperature_2m"], datetime.timedelta(hours=1)
-                )
+        with (
+            patch.object(type(store2), "is_stale", return_value=False),
+            patch.object(store2, "_read_meta", return_value=empty_schema_meta),
+        ):
+            r2 = store2.is_forecast_weather_fresh(
+                zone, ["temperature_2m"], datetime.timedelta(hours=1)
+            )
         assert r2 is False  # line 158: if not cached_schema: return False
 
     # ── Line 158: is_forecast_weather_fresh → empty cached_schema ─────────────
@@ -643,7 +687,6 @@ class TestParquetAdditionalCoverage:
 
     def test_is_stale_malformed_fetched_at_returns_true(self, store, tmp_path):
         """Lines 376-377: fetched_at is not a valid timestamp → exception → return True."""
-        import json
         from unittest.mock import patch
 
         zone = "NL"

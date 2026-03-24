@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Shared pytest fixtures for runeflow tests."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -11,10 +12,10 @@ import pytest
 
 from runeflow.zones.registry import ZoneRegistry
 
-
 # ---------------------------------------------------------------------------
 # Time-series helpers
 # ---------------------------------------------------------------------------
+
 
 def _hourly_utc_index(n: int = 24 * 14) -> pd.DatetimeIndex:
     """Return *n* hours of UTC-aware timestamps starting 2024-01-01."""
@@ -76,6 +77,7 @@ def full_feature_df(hourly_index: pd.DatetimeIndex) -> pd.DataFrame:
 # Zone fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="session")
 def zone_cfg_nl():
     return ZoneRegistry.get("NL")
@@ -89,6 +91,7 @@ def zone_cfg_de_lu():
 # ---------------------------------------------------------------------------
 # Temp directory
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def tmp_cache_dir(tmp_path):

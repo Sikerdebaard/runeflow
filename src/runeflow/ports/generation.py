@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """GenerationPort — abstract interface for grid generation & load data."""
+
 from __future__ import annotations
 
 import datetime

@@ -3,12 +3,13 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Spike detection and clustering feature group."""
+
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 
@@ -97,7 +98,7 @@ class SpikeRiskFeatures(FeatureGroup):
             risk_parts.append(df["temp_extremeness"])
         if "wind_scarcity" in df.columns:
             ws = df["wind_scarcity"]
-            risk_parts.append(((ws - ws.min()) / (ws.max() - ws.min() + 1e-8)))
+            risk_parts.append((ws - ws.min()) / (ws.max() - ws.min() + 1e-8))
         if "spike_cluster_active" in df.columns:
             risk_parts.append(df["spike_cluster_active"].astype(float))
 

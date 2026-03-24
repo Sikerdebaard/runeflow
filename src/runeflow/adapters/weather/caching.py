@@ -23,6 +23,7 @@ Example — wire up a 3-hour TTL cache in the binder::
     weather = CachingWeatherAdapter(inner, store, zone, strategy=strategy)
     binder.bind(WeatherPort, weather)
 """
+
 from __future__ import annotations
 
 import datetime
@@ -110,15 +111,13 @@ class CachingWeatherAdapter(WeatherPort):
             cached = self._store.load_forecast_weather(self._zone)
             if cached is not None:
                 logger.info(
-                    "Weather cache hit: deterministic forecast for zone=%s "
-                    "(strategy=%s)",
-                    self._zone, type(self._strategy).__name__,
+                    "Weather cache hit: deterministic forecast for zone=%s (strategy=%s)",
+                    self._zone,
+                    type(self._strategy).__name__,
                 )
                 return cached
 
-        logger.info(
-            "Downloading deterministic forecast weather for zone=%s...", self._zone
-        )
+        logger.info("Downloading deterministic forecast weather for zone=%s...", self._zone)
         data = self._inner.download_forecast(locations, horizon_days=horizon_days)
         self._strategy.on_downloaded(self._store, data, self._zone, None)
         return data
@@ -139,26 +138,28 @@ class CachingWeatherAdapter(WeatherPort):
             members = self._load_all_cached_members()
             if members is not None:
                 logger.info(
-                    "Weather cache hit: %d ensemble members for zone=%s "
-                    "(strategy=%s)",
-                    len(members), self._zone, type(self._strategy).__name__,
+                    "Weather cache hit: %d ensemble members for zone=%s (strategy=%s)",
+                    len(members),
+                    self._zone,
+                    type(self._strategy).__name__,
                 )
                 return members
 
         logger.info(
             "Downloading ensemble forecast weather (%d members) for zone=%s...",
-            self._n_members, self._zone,
+            self._n_members,
+            self._zone,
         )
-        downloaded = self._inner.download_ensemble_forecast(
-            locations, horizon_days=horizon_days
-        )
+        downloaded = self._inner.download_ensemble_forecast(locations, horizon_days=horizon_days)
         batch = downloaded[: self._n_members]
         for i, member in enumerate(batch):
             self._strategy.on_downloaded(self._store, member, self._zone, i)
         if batch:
             logger.info(
                 "Cached %d/%d ensemble members for zone=%s",
-                len(batch), len(downloaded), self._zone,
+                len(batch),
+                len(downloaded),
+                self._zone,
             )
         return batch
 

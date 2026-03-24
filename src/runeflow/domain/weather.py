@@ -3,9 +3,10 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Weather domain types."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -25,7 +26,7 @@ class WeatherRecord:
     """Single hourly weather observation/forecast for one location."""
 
     timestamp: pd.Timestamp
-    location: str               # WeatherLocation.name
+    location: str  # WeatherLocation.name
     temperature_2m: float | None = None
     wind_speed_10m: float | None = None
     wind_direction_10m: float | None = None
@@ -44,7 +45,7 @@ class WeatherSeries:
     """Multi-location weather data (wide format, columns prefixed by location)."""
 
     locations: tuple[str, ...]
-    df: pd.DataFrame            # Wide: DatetimeIndex × location-prefixed columns
+    df: pd.DataFrame  # Wide: DatetimeIndex × location-prefixed columns
     source: str
     fetched_at: pd.Timestamp
 
@@ -62,7 +63,7 @@ class WeatherSeries:
         frames: dict[str, pd.DataFrame],
         source: str,
         fetched_at: pd.Timestamp | None = None,
-    ) -> "WeatherSeries":
+    ) -> WeatherSeries:
         """
         Build a WeatherSeries by merging per-location DataFrames.
 

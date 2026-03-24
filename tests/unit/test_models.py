@@ -3,23 +3,23 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Tests for XGBoostQuantileModel, ExtremeHighModel, ExtremeLowModel."""
+
 from __future__ import annotations
 
 import pickle
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from runeflow.exceptions import ModelNotTrainedError
-from runeflow.models.xgboost_quantile import XGBoostQuantileModel
 from runeflow.models.extreme_high import ExtremeHighModel
 from runeflow.models.extreme_low import ExtremeLowModel
 from runeflow.models.registry import MODEL_REGISTRY
-
+from runeflow.models.xgboost_quantile import XGBoostQuantileModel
 
 # ── Synthetic data helpers ────────────────────────────────────────────────────
+
 
 def _make_Xy(n: int = 300, seed: int = 99):
     """Create minimal X (feature) DataFrame and y (target) Series for tests."""
@@ -80,6 +80,7 @@ def fast_extreme_low(monkeypatch):
 
 # ── XGBoostQuantileModel ──────────────────────────────────────────────────────
 
+
 class TestXGBoostQuantileModel:
     def test_name(self):
         assert XGBoostQuantileModel().name == "xgboost_quantile"
@@ -131,9 +132,7 @@ class TestXGBoostQuantileModel:
         X, y = _make_Xy()
         fast_xgb_model.train(X, y)
         preds = fast_xgb_model.predict(X)
-        valid = (preds["lower"] <= preds["prediction"]) & (
-            preds["prediction"] <= preds["upper"]
-        )
+        valid = (preds["lower"] <= preds["prediction"]) & (preds["prediction"] <= preds["upper"])
         # Conformal calibration may produce slight violations; allow up to 10%
         assert valid.mean() >= 0.9
 
@@ -178,6 +177,7 @@ class TestXGBoostQuantileModel:
 
 # ── ExtremeHighModel ──────────────────────────────────────────────────────────
 
+
 class TestExtremeHighModel:
     def test_name(self):
         assert ExtremeHighModel().name == "extreme_high"
@@ -200,13 +200,14 @@ class TestExtremeHighModel:
     def test_spike_weight_boosts_high_prices(self, fast_extreme_high):
         """Extreme predictions should skew high relative to median."""
         X, y = _make_Xy()
-        median_model = XGBoostQuantileModel()
+        XGBoostQuantileModel()  # sanity check — model instantiates without crashing
         # just a quick sanity check — model trains without crashing
         fast_extreme_high.train(X, y)
         assert fast_extreme_high.is_trained
 
 
 # ── ExtremeLowModel ───────────────────────────────────────────────────────────
+
 
 class TestExtremeLowModel:
     def test_name(self):
@@ -236,6 +237,7 @@ class TestExtremeLowModel:
 
 
 # ── MODEL_REGISTRY ────────────────────────────────────────────────────────────
+
 
 class TestXGBoostQuantileModelExtra:
     def test_train_with_sample_weight(self, fast_xgb_model):
@@ -394,6 +396,7 @@ class TestExtremeLowModelExtra:
 
 # ── MODEL_REGISTRY ────────────────────────────────────────────────────────────
 
+
 class TestModelRegistry:
     def test_contains_xgboost_quantile(self):
         assert "xgboost_quantile" in MODEL_REGISTRY
@@ -405,7 +408,7 @@ class TestModelRegistry:
         assert "extreme_low" in MODEL_REGISTRY
 
     def test_factory_returns_instance(self):
-        for name, factory in MODEL_REGISTRY.items():
+        for _name, factory in MODEL_REGISTRY.items():
             obj = factory()
             assert hasattr(obj, "train")
             assert hasattr(obj, "predict")

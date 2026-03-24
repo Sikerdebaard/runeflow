@@ -6,6 +6,7 @@
 WarmupService — builds and caches the feature warmup window needed for
 autoregressive inference.
 """
+
 from __future__ import annotations
 
 import logging
@@ -13,7 +14,7 @@ import logging
 import inject
 import pandas as pd
 
-from runeflow.features import INFERENCE_WARMUP_DAYS, build_pipeline
+from runeflow.features import INFERENCE_WARMUP_DAYS
 from runeflow.ports.store import DataStore
 from runeflow.zones.config import ZoneConfig
 
@@ -34,8 +35,8 @@ class WarmupService:
     @inject.autoparams()
     def __init__(
         self,
-        zone_cfg: ZoneConfig = inject.attr("zone_config"),
-        store: DataStore = inject.attr(DataStore),
+        zone_cfg: ZoneConfig = inject.attr("zone_config"),  # type: ignore[assignment]  # noqa: B008
+        store: DataStore = inject.attr(DataStore),  # type: ignore[assignment]  # noqa: B008
     ) -> None:
         self._zone_cfg = zone_cfg
         self._store = store

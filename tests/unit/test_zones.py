@@ -3,7 +3,10 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Tests for ZoneRegistry and zone configurations."""
+
 from __future__ import annotations
+
+import datetime as _dt
 
 import pytest
 
@@ -68,6 +71,7 @@ class TestNLZoneConfig:
     def test_feature_groups_valid_names(self):
         """All feature groups should match names in the registry."""
         from runeflow.features.registry import FEATURE_REGISTRY
+
         unknown = [g for g in self.cfg.feature_groups if g not in FEATURE_REGISTRY]
         assert unknown == [], f"Unknown feature groups in NL config: {unknown}"
 
@@ -114,6 +118,7 @@ class TestDELUZoneConfig:
 
     def test_feature_groups_valid_names(self):
         from runeflow.features.registry import FEATURE_REGISTRY
+
         unknown = [g for g in self.cfg.feature_groups if g not in FEATURE_REGISTRY]
         assert unknown == [], f"Unknown feature groups in DE_LU config: {unknown}"
 
@@ -129,7 +134,6 @@ class TestDELUZoneConfig:
 # Tariff formula functions — NL
 # ---------------------------------------------------------------------------
 
-import datetime as _dt
 _DATE_2024 = _dt.date(2024, 6, 1)
 _DATE_2026 = _dt.date(2026, 6, 1)
 _DATE_FUTURE = _dt.date(2099, 1, 1)  # unknown year → fallback
@@ -142,6 +146,7 @@ class TestNLTariffFormulas:
     @pytest.fixture(autouse=True)
     def _formulas(self):
         from runeflow.zones.tariffs.nl import NL_TARIFF_FORMULAS
+
         self.formulas = NL_TARIFF_FORMULAS
 
     def _apply(self, provider: str, p: float = _WHOLESALE, dt: _dt.date = _DATE_2024) -> float:
@@ -207,8 +212,19 @@ class TestNLTariffFormulas:
 
     def test_all_providers_registered(self):
         providers = set(self.formulas.keys())
-        for p in ["wholesale", "zonneplan", "tibber", "easy_energy", "greenchoice",
-                  "vattenfall", "eneco", "essent", "anwb", "leapp", "energie_van_ons"]:
+        for p in [
+            "wholesale",
+            "zonneplan",
+            "tibber",
+            "easy_energy",
+            "greenchoice",
+            "vattenfall",
+            "eneco",
+            "essent",
+            "anwb",
+            "leapp",
+            "energie_van_ons",
+        ]:
             assert p in providers, f"Provider '{p}' missing from NL_TARIFF_FORMULAS"
 
 
@@ -218,6 +234,7 @@ class TestDETariffFormulas:
     @pytest.fixture(autouse=True)
     def _formulas(self):
         from runeflow.zones.tariffs.de import DE_TARIFF_FORMULAS
+
         self.formulas = DE_TARIFF_FORMULAS
 
     def _apply(self, provider: str, p: float = 0.05) -> float:
@@ -249,15 +266,18 @@ class TestWholesaleTariff:
 
     def test_passthrough(self):
         from runeflow.zones.tariffs.wholesale import WHOLESALE_FORMULA
+
         result = WHOLESALE_FORMULA.apply(0.123, _DATE_2024)
         assert result == pytest.approx(0.123)
 
     def test_zero(self):
         from runeflow.zones.tariffs.wholesale import WHOLESALE_FORMULA
+
         assert WHOLESALE_FORMULA.apply(0.0, _DATE_2024) == 0.0
 
     def test_negative(self):
         from runeflow.zones.tariffs.wholesale import WHOLESALE_FORMULA
+
         assert WHOLESALE_FORMULA.apply(-0.05, _DATE_2024) == pytest.approx(-0.05)
 
 
@@ -266,45 +286,54 @@ class TestGetTariffFormula:
 
     def test_nl_vattenfall(self):
         from runeflow.zones.tariffs import get_tariff_formula
+
         formula = get_tariff_formula("NL", "vattenfall")
         assert formula.provider_id == "vattenfall"
 
     def test_de_lu_tibber(self):
         from runeflow.zones.tariffs import get_tariff_formula
+
         formula = get_tariff_formula("DE_LU", "tibber")
         assert formula.provider_id == "tibber"
 
     def test_unknown_zone_returns_wholesale(self):
         from runeflow.zones.tariffs import get_tariff_formula
+
         formula = get_tariff_formula("XX", "vattenfall")
         assert formula.provider_id == "wholesale"
 
     def test_unknown_provider_returns_wholesale(self):
         from runeflow.zones.tariffs import get_tariff_formula
+
         formula = get_tariff_formula("NL", "no_such_provider")
         assert formula.provider_id == "wholesale"
 
     def test_wholesale_provider_explicit(self):
         from runeflow.zones.tariffs import get_tariff_formula
+
         formula = get_tariff_formula("NL", "wholesale")
         assert formula.provider_id == "wholesale"
 
     def test_lowercase_zone_normalised(self):
         from runeflow.zones.tariffs import get_tariff_formula
+
         formula = get_tariff_formula("nl", "tibber")
         assert formula.provider_id == "tibber"
 
     def test_de_zone_alias(self):
         """'DE' and 'DE_LU' share the same formula registry."""
         from runeflow.zones.tariffs import get_tariff_formula
+
         f_de = get_tariff_formula("DE", "awattar")
         f_de_lu = get_tariff_formula("DE_LU", "awattar")
         assert f_de.provider_id == f_de_lu.provider_id
 
     def test_unknown_zone_with_wholesale_provider(self):
-        """Unknown zone + 'wholesale' provider hits the explicit wholesale branch (tariffs/__init__.py line 31)."""
-        from runeflow.zones.tariffs import get_tariff_formula, WHOLESALE_FORMULA
-        # "XX" not in _ALL → zone_formulas={} → "wholesale" not in {} → if provider=="wholesale" → True
+        """Unknown zone + 'wholesale' provider hits the explicit wholesale branch."""
+        from runeflow.zones.tariffs import WHOLESALE_FORMULA, get_tariff_formula
+
+        # "XX" not in _ALL → zone_formulas={} → "wholesale" not in {}
+        # → if provider=="wholesale" → True
         formula = get_tariff_formula("XX", "wholesale")
         assert formula is WHOLESALE_FORMULA
 

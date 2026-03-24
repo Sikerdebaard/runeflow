@@ -3,12 +3,13 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Precipitation and snowfall feature group."""
+
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 
@@ -25,8 +26,8 @@ class PrecipitationFeatures(FeatureGroup):
         df = self._copy(df)
 
         precip_cols = [c for c in df.columns if "precip" in c.lower() or "rain" in c.lower()]
-        snow_cols = [c for c in df.columns if "snow" in c.lower()]
-        temp_cols = [c for c in df.columns if "temp" in c.lower() and "dew" not in c.lower()]
+        _snow_cols = [c for c in df.columns if "snow" in c.lower()]
+        _temp_cols = [c for c in df.columns if "temp" in c.lower() and "dew" not in c.lower()]
 
         if precip_cols:
             precip_col = precip_cols[0]

@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Generation domain type."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ class GenerationSeries:
     """ENTSO-E generation and load forecasts."""
 
     zone: str
-    df: pd.DataFrame         # Columns: load_forecast_mw, forecast_solar, etc.
+    df: pd.DataFrame  # Columns: load_forecast_mw, forecast_solar, etc.
     source: str
     fetched_at: pd.Timestamp
 

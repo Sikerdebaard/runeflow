@@ -3,9 +3,10 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Feature engineering public API."""
-from .base import FeatureGroup, FeaturePipeline, INFERENCE_WARMUP_DAYS
-from .registry import FEATURE_REGISTRY, DEFAULT_ORDER, build_pipeline
+
+from .base import INFERENCE_WARMUP_DAYS, FeatureGroup, FeaturePipeline
 from .generation import GENERATION_COLUMNS_HISTORICAL_ONLY
+from .registry import DEFAULT_ORDER, FEATURE_REGISTRY, build_pipeline
 
 __all__ = [
     "FeatureGroup",

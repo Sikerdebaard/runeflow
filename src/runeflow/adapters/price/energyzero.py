@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """EnergyZero price adapter — free NL-only API, no authentication required."""
+
 from __future__ import annotations
 
 import datetime
@@ -54,12 +55,8 @@ class EnergyZeroPriceAdapter(PricePort):
         chunks: list[pd.DataFrame] = []
         chunk_start = start
         while chunk_start <= end:
-            chunk_end = min(
-                chunk_start + datetime.timedelta(days=_CHUNK_SIZE_DAYS - 1), end
-            )
-            logger.info(
-                f"[EnergyZero] Downloading {chunk_start} → {chunk_end}…"
-            )
+            chunk_end = min(chunk_start + datetime.timedelta(days=_CHUNK_SIZE_DAYS - 1), end)
+            logger.info(f"[EnergyZero] Downloading {chunk_start} → {chunk_end}…")
             chunk_df = self._fetch_chunk(chunk_start, chunk_end)
             if chunk_df is not None and not chunk_df.empty:
                 chunks.append(chunk_df)
@@ -68,9 +65,7 @@ class EnergyZeroPriceAdapter(PricePort):
                 time.sleep(_CHUNK_DELAY)
 
         if not chunks:
-            raise DataUnavailableError(
-                f"EnergyZero returned no data for NL ({start} → {end})."
-            )
+            raise DataUnavailableError(f"EnergyZero returned no data for NL ({start} → {end}).")
 
         df = pd.concat(chunks, ignore_index=True)
         df.drop_duplicates(subset=["date"], keep="first", inplace=True)
@@ -90,18 +85,16 @@ class EnergyZeroPriceAdapter(PricePort):
 
     # ── Internal ─────────────────────────────────────────────────────────────
 
-    def _fetch_chunk(
-        self, start: datetime.date, end: datetime.date
-    ) -> pd.DataFrame | None:
+    def _fetch_chunk(self, start: datetime.date, end: datetime.date) -> pd.DataFrame | None:
         params = {
             "fromDate": start.strftime("%Y-%m-%dT00:00:00.000Z"),
             "tillDate": end.strftime("%Y-%m-%dT23:59:59.000Z"),
-            "interval": 4,      # Hourly
-            "usageType": 1,      # Electricity
+            "interval": 4,  # Hourly
+            "usageType": 1,  # Electricity
             "inclBtw": "false",  # Excl. VAT
         }
         try:
-            resp = requests.get(_BASE_URL, params=params, timeout=30)
+            resp = requests.get(_BASE_URL, params=params, timeout=30)  # type: ignore[arg-type]
             resp.raise_for_status()
             data = resp.json()
         except requests.RequestException as exc:

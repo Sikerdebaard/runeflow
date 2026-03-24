@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """ENTSO-E price adapter — wraps entsoe-py."""
+
 from __future__ import annotations
 
 import datetime
@@ -17,9 +18,7 @@ from runeflow.exceptions import AuthenticationError, DataUnavailableError, Downl
 from runeflow.ports.price import PricePort
 
 # Mapping from ENTSO-E zone code → Area enum
-_AREA_MAP: dict[str, Area] = {
-    area.name: area for area in Area
-}
+_AREA_MAP: dict[str, Area] = {area.name: area for area in Area}
 
 # Additional common aliases
 _ZONE_ALIASES: dict[str, str] = {
@@ -65,7 +64,9 @@ class EntsoePriceAdapter(PricePort):
         area = _zone_to_area(zone)
         # ENTSO-E API uses timezone-aware pd.Timestamp
         ts_start = pd.Timestamp(start)
-        ts_start = ts_start.tz_localize("UTC") if ts_start.tzinfo is None else ts_start.tz_convert("UTC")
+        ts_start = (
+            ts_start.tz_localize("UTC") if ts_start.tzinfo is None else ts_start.tz_convert("UTC")
+        )
         ts_end = pd.Timestamp(end)
         ts_end = ts_end.tz_localize("UTC") if ts_end.tzinfo is None else ts_end.tz_convert("UTC")
         ts_end += pd.Timedelta("23h")
@@ -81,9 +82,7 @@ class EntsoePriceAdapter(PricePort):
             raise DownloadError(f"ENTSO-E download failed for {zone}: {exc}") from exc
 
         if series is None or series.empty:
-            raise DataUnavailableError(
-                f"ENTSO-E returned no data for {zone} ({start} → {end})."
-            )
+            raise DataUnavailableError(f"ENTSO-E returned no data for {zone} ({start} → {end}).")
 
         # Convert Series to DataFrame (index → 'date', values → 'Price_EUR_MWh')
         df = series.rename("Price_EUR_MWh").rename_axis("date").reset_index()

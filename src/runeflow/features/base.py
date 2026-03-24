@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Base classes for the feature engineering pipeline."""
+
 from __future__ import annotations
 
 import logging

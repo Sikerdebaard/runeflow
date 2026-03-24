@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """WeatherPort — abstract interface for weather data adapters."""
+
 from __future__ import annotations
 
 import datetime

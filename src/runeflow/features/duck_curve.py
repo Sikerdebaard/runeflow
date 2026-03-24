@@ -3,12 +3,14 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """Duck-curve severity feature group."""
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
+
 from .base import FeatureGroup
 
 
@@ -42,8 +44,6 @@ class DuckCurveFeatures(FeatureGroup):
         )
 
         if "is_solar_cliff" in df.columns:
-            df["evening_ramp_severity_peak"] = (
-                df["is_solar_cliff"] * df["evening_ramp_severity"]
-            )
+            df["evening_ramp_severity_peak"] = df["is_solar_cliff"] * df["evening_ramp_severity"]
 
         return df

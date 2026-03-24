@@ -8,6 +8,7 @@ Dependency injection configuration.
 Call ``configure_injector(zone)`` **once** from the CLI entry point,
 never at import time.  Tests may call it with ``allow_override=True``.
 """
+
 from __future__ import annotations
 
 import os
@@ -47,7 +48,7 @@ def configure_injector(
         config.ensure_dirs()
 
         binder.bind(AppConfig, config)
-        binder.bind(ZoneConfig, zone_cfg)   # class-based lookup (autoparams)
+        binder.bind(ZoneConfig, zone_cfg)  # class-based lookup (autoparams)
         binder.bind("zone_config", zone_cfg)  # string-based lookup (inject.attr)
         binder.bind("logger", _logger)
 

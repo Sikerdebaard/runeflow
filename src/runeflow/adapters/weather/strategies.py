@@ -21,6 +21,7 @@ ReadOnlyCachingStrategy
 
 Custom strategies implement the :class:`CachingStrategy` ABC.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -56,6 +57,7 @@ class CachingStrategy(ABC):
 
 # ---------------------------------------------------------------------------
 
+
 class TTLCachingStrategy(CachingStrategy):
     """Re-use cache within *ttl*; persist every download.
 
@@ -89,6 +91,7 @@ class TTLCachingStrategy(CachingStrategy):
 
 # ---------------------------------------------------------------------------
 
+
 class NoCachingStrategy(CachingStrategy):
     """Bypass cache entirely — always download, never persist."""
 
@@ -112,6 +115,7 @@ class NoCachingStrategy(CachingStrategy):
 
 
 # ---------------------------------------------------------------------------
+
 
 class ReadOnlyCachingStrategy(CachingStrategy):
     """Return cached copy when fresh, but never write new downloads back.

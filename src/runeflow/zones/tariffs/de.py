@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
 """German tariff formulas."""
+
 from __future__ import annotations
 
 import datetime

@@ -14,12 +14,11 @@ Usage:
     runeflow export-tariffs --zone NL --provider vattenfall
     runeflow plot-uncertainty --zone NL
 """
+
 from __future__ import annotations
 
 import logging
-import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from loguru import logger
@@ -34,10 +33,11 @@ app = typer.Typer(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class _InterceptHandler(logging.Handler):
     """Forward stdlib logging records to loguru."""
 
-    def emit(self, record: logging.LogRecord) -> None:  # type: ignore[override]
+    def emit(self, record: logging.LogRecord) -> None:
         try:
             level: str | int = logger.level(record.levelname).name
         except ValueError:
@@ -61,6 +61,7 @@ def _setup(zone: str) -> None:
     """Configure logging and DI injector for *zone* before running any service."""
     _setup_logging()
     from runeflow.binder import configure_injector
+
     configure_injector(zone)
 
 
@@ -68,10 +69,12 @@ def _setup(zone: str) -> None:
 # Commands
 # ---------------------------------------------------------------------------
 
+
 @app.command("list-markets")
 def list_markets() -> None:
     """List all registered market zones."""
     from runeflow.zones.registry import ZoneRegistry
+
     zones = ZoneRegistry.list_zones()
     if not zones:
         typer.echo("No zones registered.")
@@ -85,7 +88,7 @@ def list_markets() -> None:
 @app.command("update-data")
 def update_data(
     zone: str = typer.Option("NL", "--zone", "-z", help="Market zone (e.g. NL, DE_LU)"),
-    years: Optional[str] = typer.Option(
+    years: str | None = typer.Option(
         None, "--years", help="Comma-separated list of years, e.g. 2020,2021,2022"
     ),
 ) -> None:
@@ -137,23 +140,25 @@ def warmup_cache(
 @app.command("inference")
 def inference(
     zone: str = typer.Option("NL", "--zone", "-z", help="Market zone"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write forecast JSON"),
+    output: Path | None = typer.Option(  # noqa: B008, E501
+        None, "--output", "-o", help="Write forecast JSON"
+    ),
 ) -> None:
     """Generate a 9-day price forecast."""
     _setup(zone)
-    from runeflow.services.inference import InferenceService
     import inject
+
     from runeflow.ports.store import DataStore
+    from runeflow.services.inference import InferenceService
 
     svc = InferenceService()
     result = svc.run()
 
-    store: DataStore = inject.instance(DataStore)
+    store: DataStore = inject.instance(DataStore)  # type: ignore[assignment]
     store.save_forecast(result)
     typer.echo(f"✓ Forecast generated: {len(result.points)} hours")
 
     if output:
-        import json
         df = result.to_dataframe()
         output.write_text(df.to_json(orient="records", date_format="iso"), encoding="utf-8")
         typer.echo(f"✓ Forecast written to {output}")
@@ -163,7 +168,9 @@ def inference(
 def export_tariffs(
     zone: str = typer.Option("NL", "--zone", "-z", help="Market zone"),
     provider: str = typer.Option("vattenfall", "--provider", "-p", help="Tariff provider ID"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output JSON path"),
+    output: Path | None = typer.Option(  # noqa: B008, E501
+        None, "--output", "-o", help="Output JSON path"
+    ),
 ) -> None:
     """Export forecast as tariff JSON."""
     _setup(zone)
@@ -177,8 +184,15 @@ def export_tariffs(
 @app.command("plot-uncertainty")
 def plot_uncertainty(
     zone: str = typer.Option("NL", "--zone", "-z", help="Market zone"),
-    provider: str = typer.Option("wholesale", "--provider", "-p", help="Tariff provider ID (e.g. wholesale, zonneplan, tibber)"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output PNG path"),
+    provider: str = typer.Option(
+        "wholesale",
+        "--provider",
+        "-p",
+        help="Tariff provider ID (e.g. wholesale, zonneplan, tibber)",
+    ),
+    output: Path | None = typer.Option(  # noqa: B008, E501
+        None, "--output", "-o", help="Output PNG path"
+    ),
 ) -> None:
     """Plot the uncertainty forecast band."""
     _setup(zone)
@@ -192,6 +206,7 @@ def plot_uncertainty(
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     app()
