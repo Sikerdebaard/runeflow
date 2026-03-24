@@ -1,0 +1,61 @@
+# runeflow-ng Intel-Optimized ML container
+# Uses Intel Extension for Scikit-learn and Intel-optimized XGBoost
+# for accelerated training and inference on Intel CPUs.
+#
+# Build:
+#   docker build -f docker/Dockerfile.intel -t runeflow-ng:intel .
+#
+# Run:
+#   docker run --rm \
+#     -e ENTSOE=<key> -e ZONE=NL \
+#     -v $(pwd)/outputs:/outputs \
+#     runeflow-ng:intel
+
+FROM intel/intel-optimized-ml:2024.7.0-pip-base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=30 \
+    TZ=Europe/Amsterdam \
+    # Patch sklearn at import time — no code changes needed for KNN,
+    # StandardScaler and other supported estimators.
+    SKLEARNEX_VERBOSE=WARNING
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cron \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+WORKDIR /app
+
+# Install package — the base image already ships Intel-optimised xgboost and
+# scikit-learn, so only the remaining dependencies are pulled here.
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -e ".[intel]"
+
+# Runtime directories
+RUN mkdir -p /app/.cache/runeflow /var/log/runeflow /outputs
+
+# Entrypoint
+COPY docker/entrypoint-evcc.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Non-root user
+RUN useradd -m -s /bin/bash runeflow && \
+    chown -R runeflow:runeflow /app /var/log/runeflow /outputs
+
+# Required env: ENTSOE
+# Optional env: ZONE (default: NL), PRICE_PROVIDER (default: wholesale),
+#               OUTPUT_FILE, CHECK_INTERVAL, LOG_LEVEL
+
+VOLUME ["/outputs", "/app/.cache/runeflow"]
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["cron", "-f"]
