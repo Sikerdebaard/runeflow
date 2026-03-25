@@ -1,3 +1,15 @@
+<p align="center">
+  <img src="assets/logo_tight_margins.png" alt="Runeflow" width="420">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Sikerdebaard/runeflow/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/Sikerdebaard/runeflow/actions/workflows/test.yml/badge.svg"></a>
+  <a href="https://www.gnu.org/licenses/agpl-3.0"><img alt="License: AGPL v3" src="https://img.shields.io/badge/License-AGPL_v3-blue.svg"></a>
+  <a href="https://www.python.org/downloads/"><img alt="Python ≥3.11" src="https://img.shields.io/badge/python-%E2%89%A53.11-blue"></a>
+  <a href="https://github.com/astral-sh/ruff"><img alt="Ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
+  <a href="https://github.com/Sikerdebaard/runeflow/actions/workflows/test.yml"><img alt="Coverage" src="https://img.shields.io/badge/coverage-checked%20in%20CI-green"></a>
+</p>
+
 # Runeflow
 
 Electricity price forecasting for European day-ahead markets (ENTSO-E zones).

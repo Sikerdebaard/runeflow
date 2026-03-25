@@ -117,4 +117,7 @@ def configure_injector(
 
         binder.bind(DataValidator, default_validator())
 
-    inject.configure(_binder, allow_override=allow_override)
+    if allow_override:
+        inject.clear_and_configure(_binder)
+    else:
+        inject.configure(_binder)

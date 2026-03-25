@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}API &amp; Docs{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <h1>API &amp; Integration</h1>
+  <p>
+    All forecast data is served as static JSON and CSV files — no API key required.
+    Files refresh automatically every 15&nbsp;minutes.
+  </p>
+</section>
+
+<section class="api-section" id="endpoints">
+  <h2>Endpoints</h2>
+  <p>Every zone/provider combination exposes three files:</p>
+  <pre><code class="js-dynamic-origin">{ORIGIN}/{ZONE}/{PROVIDER}/tariff.json   # evcc forecast JSON
+{ORIGIN}/{ZONE}/{PROVIDER}/tariff.csv    # flat CSV with forecast bounds
+{ORIGIN}/{ZONE}/{PROVIDER}/chart.png     # uncertainty chart</code></pre>
+  <p>Global metadata and model quality:</p>
+  <pre><code class="js-dynamic-origin">{ORIGIN}/api/meta.json     # zone &amp; provider registry
+{ORIGIN}/api/quality.json  # model quality metrics</code></pre>
+  <p>
+    <a href="/api/quality.json" target="_blank">Model quality metrics &rarr;</a>
+    &ensp;
+    <a href="/api/meta.json" target="_blank">Zone registry &rarr;</a>
+  </p>
+</section>
+
+<section class="api-section" id="evcc">
+  <h2>evcc integration</h2>
+  <p>
+    Use the <code>forecast</code> source type (requires evcc&nbsp;&ge;&nbsp;0.130).
+    Replace <code>NL/wholesale</code> with your zone and provider — see the provider
+    page for the exact URL.
+  </p>
+  <pre><code class="js-dynamic-origin">forecast:
+  source: http
+  uri: {ORIGIN}/NL/wholesale/tariff.json
+  cache: 15m
+  jq: '.rates | tostring'</code></pre>
+  <p class="muted small">
+    The JSON uses <code>type: forecast</code> with a <code>rates[]</code> array.
+    Each entry has <code>start</code>, <code>end</code> (UTC, Z-suffix) and
+    <code>value</code> (all-in EUR/kWh).
+  </p>
+</section>
+
+<section class="api-section" id="json-schema">
+  <h2>JSON schema</h2>
+  <pre><code>{
+  "type": "forecast",
+  "provider": "wholesale",
+  "zone": "NL",
+  "currency": "EUR",
+  "unit": "kWh",
+  "generated_at": "2026-03-25T09:00:00Z",
+  "model_version": "202603250900",
+  "rates": [
+    {
+      "start": "2026-03-25T00:00:00Z",
+      "end":   "2026-03-25T01:00:00Z",
+      "value": 0.1234,
+      "is_actual": true
+    },
+    ...
+  ]
+}</code></pre>
+  <p class="muted small">
+    <strong>is_actual</strong>: <code>true</code> when the hour uses a confirmed
+    ENTSO-E day-ahead price; <code>false</code> for model-predicted slots.
+  </p>
+</section>
+
+<section class="api-section" id="pandas">
+  <h2>Python / pandas</h2>
+  <pre><code class="js-dynamic-origin">import pandas as pd
+
+# Flat CSV — includes wholesale forecast bounds
+df = pd.read_csv(
+    "{ORIGIN}/NL/wholesale/tariff.csv",
+    parse_dates=["start", "end"],
+    index_col="start",
+)
+
+# Columns: price_eur_kwh, is_actual,
+#          prediction_eur_kwh, lower_eur_kwh,
+#          upper_eur_kwh, ensemble_p50_eur_kwh</code></pre>
+</section>
+
+<section class="api-section" id="resolution">
+  <h2>Time resolution — why hourly?</h2>
+  <p>
+    The forecast uses <strong>one-hour slots</strong>, even though the underlying
+    market now clears at 15-minute resolution. This is a deliberate design choice
+    grounded in what the underlying data and models can actually support.
+  </p>
+
+  <h3>The market switched to 15-minute resolution in October 2025</h3>
+  <p>
+    On <strong>30 September 2025</strong>, EPEX SPOT switched the Single
+    Day-Ahead Coupling (SDAC) auction from 60-minute to
+    <strong>15-minute Market Time Units (MTU)</strong> in all participating
+    bidding zones simultaneously (Ireland remains at 30-minute).
+    This transition is mandated by
+    <a href="https://eur-lex.europa.eu/eli/reg/2019/943/oj" target="_blank">EU Regulation 2019/943</a>,
+    which requires all TSOs and NEMOs to adopt 15-minute imbalance settlement
+    across European coupled markets.
+    As a result, ENTSO-E's Transparency Platform now publishes 15-minute
+    day-ahead clearing prices for all affected zones.
+  </p>
+  <p>
+    Alongside the 15-minute prices, EPEX SPOT also publishes a
+    <strong>60-minute price index</strong> defined as the strict arithmetic
+    average of the four corresponding quarter-hour clearing prices.
+    This hourly index is what the model currently trains on.
+    (<a href="https://www.epexspot.com/en/15-minute-products-market-coupling" target="_blank">Source: EPEX SPOT</a>)
+  </p>
+
+  <h3>Why not forecast at 15-minute resolution?</h3>
+  <p>
+    Forecasting the four individual quarter-hour prices within each hour is a
+    meaningfully different — and harder — problem than forecasting the hourly
+    average. The <em>intra-hour spread</em> between quarter-prices is driven
+    primarily by real-time balancing dynamics: short-notice renewable deviations,
+    last-minute demand shifts, and transmission constraints that resolve within
+    minutes. These signals are not available in day-ahead input features such as
+    weather forecasts, solar and wind output estimates, or calendar data.
+    A model trained on those features cannot reliably predict how prices will
+    differ between 14:00–14:15 and 14:45–15:00; it can only predict the mean.
+  </p>
+
+  <h3>Input features don't support finer resolution</h3>
+  <p>
+    Every input to the model carries meaningful signal at the hourly level.
+    Numerical weather prediction ensembles, solar irradiance estimates, and wind
+    power output are all aggregated over hours by the time they are usable as
+    features. Splitting them into 15-minute blocks produces four identical (or
+    linearly interpolated) values per hour — not independent information.
+    Quadrupling the output space without a proportional increase in informative
+    features increases model complexity for no accuracy benefit, while making
+    the training target noisier and harder to learn.
+  </p>
+
+  <h3>Forecast uncertainty already dominates</h3>
+  <p>
+    Beyond the first 24 hours, prediction intervals on any day-ahead price
+    forecast widen substantially. By day 3–9, the uncertainty band routinely
+    spans several cents per kWh. Within that range, the typical intra-hour
+    spread — a few tenths of a cent on most days — is completely swamped by
+    forecast error. Reporting 15-minute slots would add four numbers per hour
+    that are statistically indistinguishable from each other.
+  </p>
+
+  <h3>Hourly is sufficient for scheduling decisions</h3>
+  <p>
+    Home automation use cases — EV charging, heat pump scheduling, battery
+    dispatch — optimise across hours, not quarter-hours. No actionable decision
+    changes between adjacent 15-minute slots in a plan made the evening before.
+    evcc's scheduler itself aligns to hourly blocks when planning ahead,
+    making finer granularity in the forecast redundant in practice.
+  </p>
+
+  <h3>Ongoing evaluation</h3>
+  <p>
+    As the model continues to develop, the question of 15-minute slots is
+    actively re-evaluated. There is currently no strong reason to introduce
+    them: the arguments above hold, and adding resolution that the model cannot
+    meaningfully exploit would reduce rather than improve forecast quality.
+    That said, future advances — better sub-hourly feature engineering, richer
+    intraday training data, or demonstrated scheduling benefit — could change
+    that assessment. The decision will be revisited whenever there is concrete
+    evidence that 15-minute forecasts would provide real value to users.
+  </p>
+</section>
+
+<section class="license-section" id="license">
+  <h2>Licence</h2>
+  <p>
+    Forecast data provided by this service is &copy; <strong>Thomas Phil</strong>,
+    all rights reserved.
+  </p>
+  <ul>
+    <li>
+      <strong>Non-commercial use</strong> (personal, research, hobby
+      home-automation): free of charge, no registration required.
+    </li>
+    <li>
+      <strong>Commercial use</strong> (products, services, or any
+      revenue-generating purpose): requires a commercial licence.
+    </li>
+  </ul>
+  <p>
+    To obtain a commercial licence, contact <strong>Thomas Phil</strong> via the
+    GitHub repository:
+    <a href="https://github.com/Sikerdebaard/runeflow" target="_blank">
+      github.com/Sikerdebaard/runeflow</a>.
+  </p>
+  <p class="muted small">
+    Forecast prices are model predictions, not financial advice.
+    Accuracy is not guaranteed and actual market prices may differ.
+  </p>
+</section>
+{% endblock %}
+
+{% block footer_extra %}
+<a href="/docs/">API docs</a> &mdash;
+<a href="/docs/#license">Licence</a> &mdash;
+{% endblock %}

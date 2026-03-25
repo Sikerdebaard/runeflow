@@ -34,6 +34,8 @@ dependencies = [
     "loguru>=0.7",
     # Env
     "python-dotenv>=1.0",
+    # Dashboard templating
+    "jinja2>=3.1",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ zone_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="/">Home</a> &rsaquo; {{ zone_name }}
+</nav>
+
+<section class="page-hero">
+  <h1>{{ zone_name }} <span class="zone-badge">{{ zone_code }}</span></h1>
+  <p>Select a tariff provider to view the price forecast for your contract.</p>
+</section>
+
+<section class="provider-grid">
+  {% for p in providers %}
+  <a class="provider-card" href="/{{ zone_code }}/{{ p.id }}/">
+    <div class="provider-card-body">
+      <h2>{{ p.label }}</h2>
+      {% if p.current_price is not none %}
+      <div class="price-now price-normal">
+        &euro;{{ "%.4f"|format(p.current_price) }}<span class="price-unit">/kWh</span>
+      </div>
+      {% endif %}
+      <p class="muted">{{ p.slot_count }} hourly slots</p>
+    </div>
+    {% if p.chart_available %}
+    <img
+      class="provider-card-thumb"
+      src="/{{ zone_code }}/{{ p.id }}/chart.png"
+      alt="Forecast chart for {{ p.label }}"
+      loading="lazy">
+    {% endif %}
+  </a>
+  {% else %}
+  <p class="empty">No providers found for this zone.</p>
+  {% endfor %}
+</section>
+{% endblock %}

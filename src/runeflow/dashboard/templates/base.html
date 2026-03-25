@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="900">
+  <title>{% block title %}Runeflow{% endblock %} — Electricity Price Forecast</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/favicon180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/assets/favicon192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/assets/favicon512.png">
+</head>
+<body>
+  <header class="site-header">
+    <a class="site-logo" href="/"><img src="/assets/logo.png" alt="Runeflow" class="site-logo-img"></a>
+    <nav class="site-nav">
+      <a href="/">Zones</a>
+      <a href="/docs/">API</a>
+    </nav>
+  </header>
+
+  <main class="site-main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      Data auto-refreshes every 15 min &mdash;
+      {% block footer_extra %}{% endblock %}
+      Generated: <span class="ts">{{ generated_at }}</span>
+    </p>
+    <p class="footer-legal">
+      Forecast prices are model predictions, not financial advice.
+      Actual market prices may differ.
+      <a href="https://github.com/Sikerdebaard/runeflow" target="_blank">Source code</a>
+    </p>
+    <p class="footer-legal">
+      &copy; Thomas Phil. Data is free for <strong>non-commercial use</strong>.
+      Commercial use requires a licence &mdash;
+      <a href="/docs/#license">see licence terms</a>.
+    </p>
+  </footer>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

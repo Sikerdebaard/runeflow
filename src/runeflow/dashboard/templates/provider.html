@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ zone_name }} / {{ provider_label }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="/">Home</a> &rsaquo;
+  <a href="/{{ zone_code }}/">{{ zone_name }}</a> &rsaquo;
+  {{ provider_label }}
+</nav>
+
+<section class="page-hero">
+  <h1>{{ provider_label }} <span class="zone-badge">{{ zone_code }}</span></h1>
+  <div class="meta-row">
+    <span class="muted">Trained: <span class="js-model-ver">{{ model_version }}</span></span>
+    <span class="muted">Forecast: <span class="ts">{{ generated_at }}</span></span>
+  </div>
+</section>
+
+{% if current_price is not none %}
+<section class="current-price-banner {{ price_class }}">
+  <div class="current-price-label">Current price</div>
+  <div class="current-price-value">&euro;{{ "%.4f"|format(current_price) }}</div>
+  <div class="current-price-unit">per kWh (all-in incl. taxes)</div>
+</section>
+{% endif %}
+
+{% if chart_available %}
+<section class="chart-section">
+  <h2>Forecast chart</h2>
+  <img
+    class="forecast-chart"
+    src="/{{ zone_code }}/{{ provider_id }}/chart.png"
+    alt="Price forecast chart for {{ provider_label }}">
+</section>
+{% endif %}
+
+<section class="downloads-section">
+  <h2>Download data</h2>
+  <div class="download-buttons">
+    <a class="btn btn-primary" href="/{{ zone_code }}/{{ provider_id }}/tariff.json" download>
+      &#11123; JSON (evcc / pandas)
+    </a>
+    <a class="btn btn-secondary" href="/{{ zone_code }}/{{ provider_id }}/tariff.csv" download>
+      &#11123; CSV (pandas)
+    </a>
+    {% if chart_available %}
+    <a class="btn btn-secondary" href="/{{ zone_code }}/{{ provider_id }}/chart.png" download>
+      &#11123; Chart PNG
+    </a>
+    {% endif %}
+  </div>
+  <p class="muted small">
+    JSON is evcc forecast-compatible (<code>type: forecast</code>, <code>rates[]</code> with <code>value</code>).
+    CSV includes wholesale EUR/kWh forecast bounds for advanced analysis.
+  </p>
+</section>
+
+{% if slots %}
+<section class="price-table-section">
+  <h2>Hourly price table</h2>
+  <div class="table-wrapper">
+    <table class="price-table" id="priceTable">
+      <thead>
+        <tr>
+          <th>Start</th>
+          <th>End</th>
+          <th>Price (EUR/kWh)</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for slot in slots %}
+        <tr class="{% if loop.index <= 24 %}visible{% else %}hidden{% endif %}">
+          <td>{{ slot.start }}</td>
+          <td>{{ slot.end }}</td>
+          <td class="price-cell">{{ "%.4f"|format(slot.value if slot.value is defined else slot.price) }}</td>
+          <td>{{ "Actual" if slot.is_actual else "Forecast" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if slots|length > 24 %}
+  <button class="btn btn-secondary" id="showAllBtn" onclick="showAllRows()">
+    Show all {{ slots|length }} rows
+  </button>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="integration-section" id="api">
+  <h2>evcc integration</h2>
+  <pre><code class="js-dynamic-origin">forecast:
+  source: http
+  uri: {ORIGIN}/{{ zone_code }}/{{ provider_id }}/tariff.json
+  cache: 15m
+  jq: '.rates | tostring'</code></pre>
+
+  <h2>Python / pandas</h2>
+  <pre><code class="js-dynamic-origin">import pandas as pd
+df = pd.read_csv(
+    "{ORIGIN}/{{ zone_code }}/{{ provider_id }}/tariff.csv",
+    parse_dates=["start", "end"],
+    index_col="start",
+)</code></pre>
+</section>
+{% endblock %}
+
+{% block footer_extra %}
+<a href="/{{ zone_code }}/">{{ zone_name }}</a> &mdash;
+{% endblock %}

@@ -92,6 +92,128 @@ docker-plot: docker-build ## Build + generate plot
 	  --entrypoint runeflow \
 	  $(IMAGE):$(TAG) plot-uncertainty --zone NL --provider zonneplan --output /out/forecast-nl-zonneplan.png
 
+# ─── Dev Container (local development) ───────────────────────────────────────
+#
+# A single Docker container for iterating on the full pipeline locally.
+# The source tree (src/) is bind-mounted into the container so code changes
+# take effect immediately — no image rebuild required.
+# A Python HTTP server is provided for previewing the generated site.
+#
+# Quickstart:
+#   1. Copy and fill in your API keys (if not already done):
+#        cp .env .env.example   # or edit the existing .env
+#   2. Build the image once:
+#        make dev-build
+#   3. Run the full pipeline and open the site:
+#        make dev               # pipeline + serve on http://localhost:7071
+#
+# Individual steps (useful while iterating on model/site changes):
+#   make dev-update       step 1/7 — fetch/update historical data
+#   make dev-train        step 2/7 — train model
+#   make dev-warmup       step 3/7 — warm up feature cache
+#   make dev-inference    step 4/7 — run inference (forecast)
+#   make dev-export       step 5/7 — export tariff JSON
+#   make dev-plot         step 6/7 — generate uncertainty chart
+#   make dev-build-site   step 7/7 — build static site
+#
+# After changing a template or asset, just re-run:
+#   make dev-build-site && make dev-serve
+#
+# Override the zone on any target:
+#   make dev-inference ZONE=DE_LU
+
+DEV_IMAGE     := runeflow:dev
+DEV_PORT      := 7071
+DEV_CACHE_VOL := runeflow-cache
+
+# Overridable per invocation: make dev-update ZONE=DE_LU
+ZONE                  ?= NL
+TARIFF_PRICE_PROVIDER ?= wholesale
+
+# Shared docker run flags for all individual pipeline step targets.
+# Secrets come from .env; zone/provider are Make variables.
+_DEV_FLAGS = --rm \
+  --env-file .env \
+  -e XDG_CACHE_HOME=/app/.cache \
+  -v $(CURDIR)/src:/app/src \
+  -v $(CURDIR)/outputs:/outputs \
+  -v $(DEV_CACHE_VOL):/app/.cache
+
+.PHONY: dev-build
+dev-build: ## [dev] Build the development container image
+	docker build -f docker/Dockerfile.dev -t $(DEV_IMAGE) .
+
+.PHONY: dev-update
+dev-update: ## [dev] Step 1/7 — fetch/update historical data
+	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
+	  update-data --zone $(ZONE)
+
+.PHONY: dev-train
+dev-train: ## [dev] Step 2/7 — train model
+	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
+	  train --zone $(ZONE)
+
+.PHONY: dev-warmup
+dev-warmup: ## [dev] Step 3/7 — warm up feature cache
+	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
+	  warmup-cache --zone $(ZONE)
+
+.PHONY: dev-inference
+dev-inference: ## [dev] Step 4/7 — run inference (produce forecast)
+	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
+	  inference --zone $(ZONE)
+
+.PHONY: dev-export
+dev-export: ## [dev] Step 5/7 — export tariff JSON
+	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
+	  export-tariffs \
+	  --zone $(ZONE) \
+	  --provider $(TARIFF_PRICE_PROVIDER) \
+	  --output /outputs/tariffs.json
+
+.PHONY: dev-plot
+dev-plot: ## [dev] Step 6/7 — generate uncertainty chart
+	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
+	  plot-uncertainty \
+	  --zone $(ZONE) \
+	  --output /outputs/runeflow_uncertainty_$(ZONE).png \
+	  || echo "WARNING: chart generation failed (non-critical)"
+
+.PHONY: dev-build-site
+dev-build-site: ## [dev] Step 7/7 — build static site from cached forecast
+	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
+	  build-site \
+	  --zones $(ZONE) \
+	  --output /outputs/site
+
+.PHONY: dev-pipeline
+dev-pipeline: ## [dev] Run all 7 pipeline steps from scratch (no HTTP server)
+	docker run $(_DEV_FLAGS) \
+	  --entrypoint /entrypoint-oneshot.sh \
+	  $(DEV_IMAGE)
+
+.PHONY: dev-serve
+dev-serve: ## [dev] Serve outputs/site on http://localhost:7071 (blocking)
+	@echo "→  http://localhost:$(DEV_PORT)  — Ctrl-C to stop"
+	docker run --rm \
+	  -v $(CURDIR)/outputs/site:/site:ro \
+	  -p $(DEV_PORT):8000 \
+	  --entrypoint python \
+	  $(DEV_IMAGE) -m http.server 8000 --directory /site
+
+.PHONY: dev
+dev: ## [dev] Full pipeline + serve — all-in-one (http://localhost:7071)
+	docker run $(_DEV_FLAGS) \
+	  -e DEV_PORT=8000 \
+	  -p $(DEV_PORT):8000 \
+	  $(DEV_IMAGE)
+
+.PHONY: dev-shell
+dev-shell: ## [dev] Open an interactive shell in the dev container
+	docker run $(_DEV_FLAGS) -it \
+	  --entrypoint bash \
+	  $(DEV_IMAGE)
+
 # ─── License headers ─────────────────────────────────────────────────────────
 
 .PHONY: license-headers

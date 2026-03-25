@@ -93,6 +93,10 @@ class TrainService:
         self._store.save_model(pickle.dumps(imputer), zone, "imputer")
         self._store.save_model(json.dumps(features).encode(), zone, "features")
 
+        trained_at = datetime.now(UTC)
+        model_version = trained_at.strftime("%Y%m%d%H%M")
+        self._store.save_model(model_version.encode(), zone, "model_version")
+
         metrics: dict[str, Any] = {
             "xgboost_quantile": xgb_metrics,
             "extreme_high": ext_high_metrics,
@@ -111,10 +115,23 @@ class TrainService:
             features=tuple(features),
             metrics=metrics,
             quality_assessment=quality,
-            trained_at=datetime.now(UTC),  # type: ignore[arg-type]
-            model_version="1.0",
+            trained_at=trained_at,  # type: ignore[arg-type]
+            model_version=model_version,
             data_range=data_range,
         )
+        # Save training metrics sidecar for ExportQualityService
+        xgb = metrics.get("xgboost_quantile", {})
+        sidecar_df = pd.DataFrame(
+            [
+                {
+                    "mae": xgb.get("mae", float("nan")),
+                    "r2": xgb.get("r2", float("nan")),
+                    "coverage": xgb.get("coverage", float("nan")),
+                    "trained_at": result.trained_at.isoformat(),
+                }
+            ]
+        )
+        self._store.save_supplemental(sidecar_df, zone, "train_result")
         logger.info(
             "Training complete: MAE=%.4f  R²=%.4f  coverage=%.1f%%",
             xgb_metrics.get("mae", float("nan")),

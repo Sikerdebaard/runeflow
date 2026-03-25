@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<section class="page-hero">
+  <h1>Day-Ahead Electricity Price Forecast</h1>
+  <p>
+    XGBoost ensemble forecasts for European ENTSO-E market zones.
+    Select a zone to view tariff-adjusted prices for your energy provider.
+  </p>
+</section>
+
+<section class="zone-grid">
+  {% for zone in zones %}
+  <a class="zone-card" href="/{{ zone.code }}/">
+    <div class="zone-card-flag">{{ zone.code }}</div>
+    <div class="zone-card-body">
+      <h2>{{ zone.name }}</h2>
+      <p>{{ zone.provider_count }} providers</p>
+    </div>
+    <div class="zone-card-arrow">&#8250;</div>
+  </a>
+  {% else %}
+  <p class="empty">No zones available. Run <code>runeflow build-site</code> to generate data.</p>
+  {% endfor %}
+</section>
+{% endblock %}
+
+{% block footer_extra %}
+<a href="/docs/">API docs</a> &mdash;
+<a href="/docs/#license">Licence</a> &mdash;
+{% endblock %}

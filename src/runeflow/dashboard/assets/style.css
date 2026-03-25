@@ -1,0 +1,217 @@
+/* ── Runeflow Dashboard — style.css ───────────────────────────────────────
+   Minimal, responsive stylesheet.  No external dependencies.
+   Palette mirrors the PlotService colour scheme.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* ── Reset & base ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --dark-violet: #a718c7;
+  --dark-violet-light: #d06ce0;
+  --evergreen: #042a2b;
+  --teal: #1a6b6d;
+  --sand: #f7d4bc;
+  --blush: #fae3e3;
+  --orchid: #cfa5b4;
+  --amber: #d4875c;
+
+  --bg: #ffffff;
+  --bg-alt: #f8f8fa;
+  --text: #1a1a1a;
+  --text-muted: #666;
+  --border: #e0e0e6;
+  --radius: 8px;
+  --shadow: 0 2px 8px rgba(0,0,0,.08);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+body { font-family: var(--font); color: var(--text); background: var(--bg); line-height: 1.5; }
+a { color: var(--dark-violet); text-decoration: none; }
+a:hover { text-decoration: underline; }
+pre, code { font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font-size: .875rem; }
+
+/* ── Layout ───────────────────────────────────────────────────────────── */
+.site-main { max-width: 1080px; margin: 0 auto; padding: 1.5rem 1rem; }
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+.site-header {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--evergreen); color: #fff;
+  padding: .75rem 1.5rem;
+}
+.site-logo { display: flex; align-items: center; }
+.site-logo-img { height: 38px; width: auto; border-radius: 6px; }
+.site-nav a { color: #cfe; margin-left: 1.25rem; font-size: .9rem; }
+.site-nav a:hover { color: #fff; }
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+.site-footer {
+  border-top: 1px solid var(--border);
+  background: var(--bg-alt);
+  padding: 1rem 1.5rem;
+  font-size: .8rem; color: var(--text-muted);
+  text-align: center;
+}
+.footer-legal { margin-top: .25rem; }
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+.page-hero { margin-bottom: 2rem; }
+.page-hero h1 { font-size: 1.75rem; font-weight: 700; color: var(--evergreen); }
+.page-hero p { margin-top: .4rem; color: var(--text-muted); max-width: 60ch; }
+
+/* ── Breadcrumb ───────────────────────────────────────────────────────── */
+.breadcrumb { font-size: .85rem; color: var(--text-muted); margin-bottom: 1rem; }
+.breadcrumb a { color: var(--text-muted); }
+.breadcrumb a:hover { color: var(--dark-violet); }
+
+/* ── Badges ───────────────────────────────────────────────────────────── */
+.zone-badge {
+  display: inline-block;
+  background: var(--dark-violet);
+  color: #fff;
+  font-size: .7rem;
+  font-weight: 600;
+  padding: .15rem .4rem;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-left: .4rem;
+}
+
+/* ── Zone cards (landing page) ────────────────────────────────────────── */
+.zone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.zone-card {
+  display: flex; align-items: center;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  transition: box-shadow .15s, border-color .15s;
+  color: var(--text);
+}
+.zone-card:hover { box-shadow: var(--shadow); border-color: var(--dark-violet); text-decoration: none; }
+.zone-card-flag {
+  font-size: 1.75rem; font-weight: 800;
+  color: var(--dark-violet); margin-right: 1rem;
+}
+.zone-card-body h2 { font-size: 1rem; font-weight: 600; }
+.zone-card-body p { font-size: .8rem; color: var(--text-muted); }
+.zone-card-arrow { margin-left: auto; font-size: 1.5rem; color: var(--border); }
+
+/* ── Provider cards (zone page) ───────────────────────────────────────── */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+.provider-card {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; transition: box-shadow .15s, border-color .15s;
+  color: var(--text);
+}
+.provider-card:hover { box-shadow: var(--shadow); border-color: var(--dark-violet); text-decoration: none; }
+.provider-card-body { padding: 1rem 1.25rem; flex: 1; }
+.provider-card-body h2 { font-size: 1rem; font-weight: 600; }
+.provider-card-thumb { width: 100%; height: 120px; object-fit: cover; }
+
+/* ── Current price banner ─────────────────────────────────────────────── */
+.current-price-banner {
+  border-radius: var(--radius); padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center;
+}
+.current-price-banner.price-cheap   { background: #d4f4dd; border: 1px solid #68c97d; }
+.current-price-banner.price-normal  { background: var(--blush); border: 1px solid var(--orchid); }
+.current-price-banner.price-expensive { background: #fde8d8; border: 1px solid var(--amber); }
+
+.current-price-label { font-size: .8rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); }
+.current-price-value { font-size: 2.75rem; font-weight: 800; color: var(--evergreen); line-height: 1.1; margin: .25rem 0; }
+.current-price-unit  { font-size: .85rem; color: var(--text-muted); }
+
+/* ── Price now (small, in provider cards) ─────────────────────────────── */
+.price-now { font-size: 1.25rem; font-weight: 700; margin: .4rem 0; color: var(--evergreen); }
+.price-unit { font-size: .75rem; font-weight: 400; margin-left: .15rem; }
+
+/* ── Meta row ─────────────────────────────────────────────────────────── */
+.meta-row { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-top: .4rem; font-size: .8rem; color: var(--text-muted); }
+
+/* ── Chart ────────────────────────────────────────────────────────────── */
+.chart-section { margin-bottom: 2rem; }
+.chart-section h2 { font-size: 1.1rem; margin-bottom: .75rem; }
+.forecast-chart { width: 100%; max-width: 1040px; border-radius: var(--radius); border: 1px solid var(--border); }
+
+/* ── Downloads ────────────────────────────────────────────────────────── */
+.downloads-section { margin-bottom: 2rem; }
+.downloads-section h2 { font-size: 1.1rem; margin-bottom: .75rem; }
+.download-buttons { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: .6rem; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-block; padding: .5rem 1rem;
+  border-radius: var(--radius); font-size: .875rem; font-weight: 500;
+  border: 1px solid transparent; cursor: pointer; transition: opacity .15s;
+}
+.btn:hover { opacity: .85; text-decoration: none; }
+.btn-primary   { background: var(--dark-violet); color: #fff; }
+.btn-secondary { background: var(--bg-alt); color: var(--text); border-color: var(--border); }
+
+/* ── Price table ──────────────────────────────────────────────────────── */
+.price-table-section { margin-bottom: 2rem; }
+.price-table-section h2 { font-size: 1.1rem; margin-bottom: .75rem; }
+.table-wrapper { overflow-x: auto; }
+.price-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.price-table th { text-align: left; padding: .4rem .7rem; border-bottom: 2px solid var(--border); color: var(--text-muted); font-weight: 600; }
+.price-table td { padding: .35rem .7rem; border-bottom: 1px solid var(--border); }
+.price-table tr:hover td { background: var(--bg-alt); }
+.price-cell { font-weight: 600; font-variant-numeric: tabular-nums; }
+tr.hidden { display: none; }
+
+/* ── Integration code blocks ──────────────────────────────────────────── */
+.integration-section h2 { font-size: 1.1rem; margin: 1.5rem 0 .5rem; }
+.integration-section pre {
+  background: var(--evergreen); color: #cfe;
+  border-radius: var(--radius); padding: 1rem 1.25rem;
+  overflow-x: auto; margin-bottom: 1rem;
+}
+
+/* ── API & Licence sections (index page) ─────────────────────────────── */
+.api-section, .license-section {
+  margin: 2.5rem 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+.api-section h2, .license-section h2 {
+  font-size: 1.35rem; font-weight: 700;
+  color: var(--evergreen); margin-bottom: .75rem;
+}
+.api-section h3 { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 .4rem; }
+.api-section pre {
+  background: var(--evergreen); color: #cfe;
+  border-radius: var(--radius); padding: 1rem 1.25rem;
+  overflow-x: auto; margin-bottom: 1rem;
+}
+.api-section p, .license-section p { margin-bottom: .6rem; max-width: 72ch; }
+.license-section ul {
+  margin: .5rem 0 .75rem 1.5rem;
+  line-height: 1.7;
+}
+
+/* ── Utilities ────────────────────────────────────────────────────────── */
+.muted  { color: var(--text-muted); }
+.small  { font-size: .8rem; }
+.empty  { color: var(--text-muted); padding: 2rem; text-align: center; }
+.ts     { font-variant-numeric: tabular-nums; }
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .site-header { flex-direction: column; gap: .5rem; text-align: center; }
+  .zone-grid { grid-template-columns: 1fr; }
+  .provider-grid { grid-template-columns: 1fr; }
+  .current-price-value { font-size: 2rem; }
+  .page-hero h1 { font-size: 1.4rem; }
+}
