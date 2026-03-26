@@ -462,8 +462,11 @@ class InferenceService:
 
             if member_preds:
                 arr = np.array(member_preds)
-                ens_lower = float(np.percentile(arr, 2.5))
-                ens_upper = float(np.percentile(arr, 97.5))
+                ens_half = float(np.percentile(arr, 97.5) - np.percentile(arr, 2.5)) / 2
+                # Centre the ensemble spread on the deterministic prediction
+                # so the forecast line sits at the midpoint of the combined band.
+                ens_lower = float(det["prediction"] - ens_half)
+                ens_upper = float(det["prediction"] + ens_half)
                 ens_p25 = float(np.percentile(arr, 25))
                 ens_p50 = float(np.percentile(arr, 50))
                 ens_p75 = float(np.percentile(arr, 75))

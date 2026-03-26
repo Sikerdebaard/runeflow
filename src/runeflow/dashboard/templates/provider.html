@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ zone_name }} / {{ provider_label }}{% endblock %}
+{% block meta_description %}Hourly day-ahead electricity price forecast for {{ provider_label }} in {{ zone_name }}. Tariff-adjusted rates updated daily. Download evcc-compatible JSON or CSV.{% endblock %}
+{% block canonical_path %}/{{ zone_code }}/{{ provider_id }}/{% endblock %}
 
 {% block content %}
 <nav class="breadcrumb">
@@ -16,23 +18,37 @@
   </div>
 </section>
 
-{% if current_price is not none %}
-<section class="current-price-banner {{ price_class }}">
+<section class="current-price-banner {{ price_class }}" id="currentPriceBanner"
+         data-timezone="{{ timezone }}"
+         data-tariff-url="/{{ zone_code }}/{{ provider_id }}/tariff.json"
+         {% if current_price is none %}style="display:none"{% endif %}>
   <div class="current-price-label">Current price</div>
-  <div class="current-price-value">&euro;{{ "%.4f"|format(current_price) }}</div>
+  <div class="current-price-value" id="currentPriceValue">{% if current_price is not none %}&euro;{{ "%.2f"|format(current_price) }}{% endif %}</div>
   <div class="current-price-unit">per kWh (all-in incl. taxes)</div>
 </section>
-{% endif %}
 
-{% if chart_available %}
 <section class="chart-section">
   <h2>Forecast chart</h2>
-  <img
-    class="forecast-chart"
-    src="/{{ zone_code }}/{{ provider_id }}/chart.png"
-    alt="Price forecast chart for {{ provider_label }}">
+  <div class="chart-controls">
+    <label class="chart-resolution-toggle">
+      <span class="chart-resolution-label">Actual resolution:</span>
+      <button class="btn btn-secondary btn-sm chart-res-btn active" data-res="60" id="btnRes60">60 min</button>
+      <button class="btn btn-secondary btn-sm chart-res-btn" data-res="15" id="btnRes15">15 min</button>
+    </label>
+  </div>
+  <div class="chart-container" id="chartContainer"
+       data-chart-url="/{{ zone_code }}/{{ provider_id }}/chart.json"
+       data-timezone="{{ timezone }}">
+    <canvas id="forecastChart"></canvas>
+  </div>
+  {% if chart_available %}
+  <noscript>
+    <img class="forecast-chart"
+         src="/{{ zone_code }}/{{ provider_id }}/chart.png"
+         alt="Price forecast chart for {{ provider_label }}">
+  </noscript>
+  {% endif %}
 </section>
-{% endif %}
 
 <section class="downloads-section">
   <h2>Download data</h2>
@@ -70,10 +86,10 @@
       </thead>
       <tbody>
         {% for slot in slots %}
-        <tr class="{% if loop.index <= 24 %}visible{% else %}hidden{% endif %}">
-          <td>{{ slot.start }}</td>
-          <td>{{ slot.end }}</td>
-          <td class="price-cell">{{ "%.4f"|format(slot.value if slot.value is defined else slot.price) }}</td>
+        <tr class="hidden" data-start="{{ slot.start }}">
+          <td class="ts">{{ slot.start }}</td>
+          <td class="ts">{{ slot.end }}</td>
+          <td class="price-cell">{{ "%.2f"|format(slot.value if slot.value is defined else slot.price) }}</td>
           <td>{{ "Actual" if slot.is_actual else "Forecast" }}</td>
         </tr>
         {% endfor %}
@@ -103,6 +119,37 @@ df = pd.read_csv(
     parse_dates=["start", "end"],
     index_col="start",
 )</code></pre>
+</section>
+
+<section class="advanced-section" id="advancedPanels"
+         data-chart-url="/{{ zone_code }}/{{ provider_id }}/chart.json"
+         data-timezone="{{ timezone }}">
+  <details>
+    <summary class="advanced-toggle"><h2>Advanced forecast analytics</h2></summary>
+    <div class="advanced-panels-body">
+      <div class="stat-grid" id="summaryStats"></div>
+
+      <div class="advanced-chart-block">
+        <h3>Uncertainty band width</h3>
+        <p class="muted small">Width of the 95% confidence interval over the forecast horizon.
+          A wider band indicates higher uncertainty from weather ensemble spread
+          and/or model disagreement.</p>
+        <div class="chart-container chart-container-sm">
+          <canvas id="bandWidthChart"></canvas>
+        </div>
+      </div>
+
+      <div class="advanced-chart-block">
+        <h3>Model agreement</h3>
+        <p class="muted small">Consensus score (0&ndash;100%) across the XGBoost quantile,
+          extreme, and ensemble models. Higher agreement means the models converge
+          on a similar prediction.</p>
+        <div class="chart-container chart-container-sm">
+          <canvas id="agreementChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </details>
 </section>
 {% endblock %}
 

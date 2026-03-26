@@ -144,6 +144,13 @@ pre, code { font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font
 .chart-section { margin-bottom: 2rem; }
 .chart-section h2 { font-size: 1.1rem; margin-bottom: .75rem; }
 .forecast-chart { width: 100%; max-width: 1040px; border-radius: var(--radius); border: 1px solid var(--border); }
+.chart-container { position: relative; width: 100%; max-width: 1040px; height: 420px; }
+.chart-container canvas { border-radius: var(--radius); border: 1px solid var(--border); }
+.chart-controls { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+.chart-resolution-toggle { display: flex; align-items: center; gap: .4rem; }
+.chart-resolution-label { font-size: .85rem; color: var(--text-muted); }
+.btn-sm { padding: .25rem .65rem; font-size: .8rem; }
+.chart-res-btn.active { background: var(--dark-violet); color: #fff; border-color: var(--dark-violet); }
 
 /* ── Downloads ────────────────────────────────────────────────────────── */
 .downloads-section { margin-bottom: 2rem; }
@@ -206,6 +213,44 @@ tr.hidden { display: none; }
 .small  { font-size: .8rem; }
 .empty  { color: var(--text-muted); padding: 2rem; text-align: center; }
 .ts     { font-variant-numeric: tabular-nums; }
+
+/* ── Advanced analytics section ───────────────────────────────────────── */
+.advanced-section { margin: 2.5rem 0 1.5rem; }
+.advanced-toggle {
+  cursor: pointer; list-style: none; user-select: none;
+}
+.advanced-toggle::-webkit-details-marker { display: none; }
+.advanced-toggle h2 {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-size: 1.1rem; font-weight: 600; color: var(--text-muted);
+}
+.advanced-toggle h2::before {
+  content: "\25B6"; font-size: .7rem; transition: transform .2s;
+}
+details[open] > .advanced-toggle h2::before { transform: rotate(90deg); }
+.advanced-panels-body { padding-top: 1rem; }
+
+/* Summary stat cards */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: .75rem;
+  margin-bottom: 1.5rem;
+}
+.stat-card {
+  background: var(--bg-alt); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: .85rem 1rem;
+  text-align: center;
+}
+.stat-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+.stat-value { font-size: 1.5rem; font-weight: 800; color: var(--evergreen); line-height: 1.2; margin: .15rem 0; font-variant-numeric: tabular-nums; }
+.stat-sub { font-size: .7rem; color: var(--text-muted); }
+
+/* Advanced chart blocks */
+.advanced-chart-block { margin-bottom: 1.5rem; }
+.advanced-chart-block h3 { font-size: 1rem; font-weight: 600; margin-bottom: .25rem; color: var(--evergreen); }
+.advanced-chart-block p { margin-bottom: .75rem; }
+.chart-container-sm { height: 260px; }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
 @media (max-width: 600px) {

@@ -98,7 +98,17 @@ class CachingWeatherAdapter(WeatherPort):
         start: datetime.date,
         end: datetime.date,
     ) -> WeatherSeries:
-        """Historical data is not cached — delegate directly to inner."""
+        """Return cached historical weather if schema matches, else download."""
+        if self._store.is_historical_weather_fresh(self._zone, self._det_cols):
+            cached = self._store.load_weather(self._zone, start, end)
+            if cached is not None:
+                logger.info(
+                    "Weather cache hit: historical data for zone=%s",
+                    self._zone,
+                )
+                return cached
+
+        logger.info("Downloading historical weather for zone=%s...", self._zone)
         return self._inner.download_historical(locations, start, end)
 
     def download_forecast(

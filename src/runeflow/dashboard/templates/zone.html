@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ zone_name }}{% endblock %}
+{% block meta_description %}Day-ahead electricity price forecast for {{ zone_name }} ({{ zone_code }}). Compare tariff-adjusted hourly rates across energy providers in the {{ zone_code }} market zone.{% endblock %}
+{% block canonical_path %}/{{ zone_code }}/{% endblock %}
 
 {% block content %}
 <nav class="breadcrumb">
@@ -16,11 +18,12 @@
   <a class="provider-card" href="/{{ zone_code }}/{{ p.id }}/">
     <div class="provider-card-body">
       <h2>{{ p.label }}</h2>
-      {% if p.current_price is not none %}
-      <div class="price-now price-normal">
-        &euro;{{ "%.4f"|format(p.current_price) }}<span class="price-unit">/kWh</span>
+      <div class="price-now price-normal js-zone-price"
+           data-tariff-url="/{{ zone_code }}/{{ p.id }}/tariff.json"
+           data-timezone="{{ timezone }}"
+           {% if p.current_price is none %}style="display:none"{% endif %}>
+        {% if p.current_price is not none %}&euro;{{ "%.2f"|format(p.current_price) }}{% endif %}<span class="price-unit">/kWh</span>
       </div>
-      {% endif %}
       <p class="muted">{{ p.slot_count }} hourly slots</p>
     </div>
     {% if p.chart_available %}

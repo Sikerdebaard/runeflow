@@ -144,6 +144,7 @@ class BuildSiteZoneService:
                 chart_available=chart_available,
                 model_version=forecast.model_version if forecast else "unknown",
                 generated_at=forecast.created_at.isoformat() if forecast else "",
+                timezone=self._zone_cfg.timezone,
             )
 
         # Render zone overview page
@@ -153,6 +154,7 @@ class BuildSiteZoneService:
             zone_name=self._zone_cfg.name,
             providers=provider_summaries,
             generated_at=pd.Timestamp.now("UTC").isoformat(),
+            timezone=self._zone_cfg.timezone,
         )
 
         logger.info("[%s] site built in %s", zone, zone_dir)
@@ -197,6 +199,13 @@ class BuildSiteGlobalService:
         _render_docs_page(
             output_path=output_dir / "docs" / "index.html",
             generated_at=pd.Timestamp.now("UTC").isoformat(),
+        )
+        # Write SEO files
+        _write_robots_txt(output_dir / "robots.txt")
+        _write_sitemap(
+            output_dir / "sitemap.xml",
+            base_url="https://runeflow.eu",
+            zones=processed_zones,
         )
         logger.info("Global site files written under %s", output_dir)
 
@@ -265,6 +274,7 @@ def _render_zone_page(
     zone_name: str,
     providers: list[dict[str, object]],
     generated_at: str,
+    timezone: str,
 ) -> None:
     _render(
         "zone.html",
@@ -273,6 +283,7 @@ def _render_zone_page(
         zone_name=zone_name,
         providers=providers,
         generated_at=generated_at,
+        timezone=timezone,
     )
 
 
@@ -288,6 +299,7 @@ def _render_provider_page(
     chart_available: bool,
     model_version: str,
     generated_at: str,
+    timezone: str,
 ) -> None:
     # Price colour bucket: relative to daily range
     price_class = "price-normal"
@@ -323,6 +335,7 @@ def _render_provider_page(
         model_version=model_version,
         generated_at=generated_at,
         price_class=price_class,
+        timezone=timezone,
     )
 
 
@@ -332,3 +345,36 @@ def _copy_assets(dest_dir: Path) -> None:
     if _ASSETS_DIR.exists():
         for asset in _ASSETS_DIR.iterdir():
             shutil.copy2(asset, dest_dir / asset.name)
+
+
+def _write_robots_txt(dest: Path) -> None:
+    dest.write_text(
+        "User-agent: *\nAllow: /\nSitemap: https://runeflow.eu/sitemap.xml\n",
+        encoding="utf-8",
+    )
+
+
+def _write_sitemap(dest: Path, base_url: str, zones: list[str]) -> None:
+    from runeflow.zones.registry import ZoneRegistry
+
+    today = pd.Timestamp.now("UTC").strftime("%Y-%m-%d")
+    urls: list[str] = [base_url + "/", base_url + "/docs/"]
+    for zone in zones:
+        urls.append(f"{base_url}/{zone}/")
+        zone_cfg = ZoneRegistry.get(zone)
+        for provider_id in sorted(zone_cfg.tariff_formulas):
+            urls.append(f"{base_url}/{zone}/{provider_id}/")
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for url in urls:
+        lines += [
+            "  <url>",
+            f"    <loc>{url}</loc>",
+            f"    <lastmod>{today}</lastmod>",
+            "  </url>",
+        ]
+    lines.append("</urlset>")
+    dest.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -80,7 +80,8 @@ class ParquetStore(DataStore):
             combined.reset_index(drop=True, inplace=True)
         else:
             combined = df
-        self._write_parquet(path, combined, source=data.source, zone=zone)
+        schema = sorted(c for c in combined.columns if c != "date")
+        self._write_parquet(path, combined, source=data.source, zone=zone, schema=schema)
         logger.debug(f"[ParquetStore] Saved weather for zone={zone} ({len(combined)} rows).")
 
     def load_weather(
@@ -151,6 +152,23 @@ class ParquetStore(DataStore):
             return False
         required = set(expected_cols)
         return required.issubset(set(cached_schema))
+
+    def is_historical_weather_fresh(
+        self,
+        zone: str,
+        expected_cols: list[str],
+    ) -> bool:
+        """Eternal cache: fresh if file exists and schema is a superset of *expected_cols*."""
+        path = self._weather_hist_path(zone)
+        if not path.exists():
+            return False
+        meta = self._read_meta(path)
+        if meta is None:
+            return False
+        cached_schema: list[str] = meta.get("weather_schema", [])
+        if not cached_schema:
+            return False
+        return set(expected_cols).issubset(set(cached_schema))
 
     def _load_weather_series(self, path: Path) -> WeatherSeries | None:
         """Shared loader used by both deterministic and ensemble forecast paths."""

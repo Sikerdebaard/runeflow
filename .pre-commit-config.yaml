@@ -37,3 +37,12 @@ repos:
         args: [--config-file=pyproject.toml]
         pass_filenames: false
         entry: mypy src/runeflow
+
+  - repo: local
+    hooks:
+      - id: license-headers
+        name: SPDX license headers
+        language: system
+        entry: make license-headers
+        pass_filenames: false
+        types: [python]

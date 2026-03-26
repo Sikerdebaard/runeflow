@@ -122,9 +122,10 @@ docker-plot: docker-build ## Build + generate plot
 # Override the zone on any target:
 #   make dev-inference ZONE=DE_LU
 
-DEV_IMAGE     := runeflow:dev
-DEV_PORT      := 7071
-DEV_CACHE_VOL := runeflow-cache
+DEV_IMAGE      := runeflow:dev
+DEV_CONTAINER  := runeflow-dev
+DEV_PORT       := 7071
+DEV_CACHE_VOL  := runeflow-cache
 
 # Overridable per invocation: make dev-update ZONE=DE_LU
 ZONE                  ?= NL
@@ -139,52 +140,47 @@ _DEV_FLAGS = --rm \
   -v $(CURDIR)/outputs:/outputs \
   -v $(DEV_CACHE_VOL):/app/.cache
 
+# Run a `runeflow ...` sub-command in the running dev container (exec) if one exists,
+# or fall back to a fresh one-shot container.
+define _dev_exec
+@if docker ps --filter "name=$(DEV_CONTAINER)" --filter "status=running" -q 2>/dev/null | grep -q .; then \
+  docker exec $(DEV_CONTAINER) runeflow $(1); \
+else \
+  docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) $(1); \
+fi
+endef
+
 .PHONY: dev-build
 dev-build: ## [dev] Build the development container image
 	docker build -f docker/Dockerfile.dev -t $(DEV_IMAGE) .
 
 .PHONY: dev-update
 dev-update: ## [dev] Step 1/7 — fetch/update historical data
-	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
-	  update-data --zone $(ZONE)
+	$(call _dev_exec,update-data --zone $(ZONE))
 
 .PHONY: dev-train
 dev-train: ## [dev] Step 2/7 — train model
-	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
-	  train --zone $(ZONE)
+	$(call _dev_exec,train --zone $(ZONE))
 
 .PHONY: dev-warmup
 dev-warmup: ## [dev] Step 3/7 — warm up feature cache
-	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
-	  warmup-cache --zone $(ZONE)
+	$(call _dev_exec,warmup-cache --zone $(ZONE))
 
 .PHONY: dev-inference
 dev-inference: ## [dev] Step 4/7 — run inference (produce forecast)
-	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
-	  inference --zone $(ZONE)
+	$(call _dev_exec,inference --zone $(ZONE))
 
 .PHONY: dev-export
 dev-export: ## [dev] Step 5/7 — export tariff JSON
-	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
-	  export-tariffs \
-	  --zone $(ZONE) \
-	  --provider $(TARIFF_PRICE_PROVIDER) \
-	  --output /outputs/tariffs.json
+	$(call _dev_exec,export-tariffs --zone $(ZONE) --provider $(TARIFF_PRICE_PROVIDER) --output /outputs/tariffs.json)
 
 .PHONY: dev-plot
 dev-plot: ## [dev] Step 6/7 — generate uncertainty chart
-	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
-	  plot-uncertainty \
-	  --zone $(ZONE) \
-	  --output /outputs/runeflow_uncertainty_$(ZONE).png \
-	  || echo "WARNING: chart generation failed (non-critical)"
+	$(call _dev_exec,plot-uncertainty --zone $(ZONE) --output /outputs/runeflow_uncertainty_$(ZONE).png) || echo "WARNING: chart generation failed (non-critical)"
 
 .PHONY: dev-build-site
 dev-build-site: ## [dev] Step 7/7 — build static site from cached forecast
-	docker run $(_DEV_FLAGS) --entrypoint runeflow $(DEV_IMAGE) \
-	  build-site \
-	  --zones $(ZONE) \
-	  --output /outputs/site
+	$(call _dev_exec,build-site --zones $(ZONE) --output /outputs/site)
 
 .PHONY: dev-pipeline
 dev-pipeline: ## [dev] Run all 7 pipeline steps from scratch (no HTTP server)
@@ -193,26 +189,38 @@ dev-pipeline: ## [dev] Run all 7 pipeline steps from scratch (no HTTP server)
 	  $(DEV_IMAGE)
 
 .PHONY: dev-serve
-dev-serve: ## [dev] Serve outputs/site on http://localhost:7071 (blocking)
+dev-serve: _dev-stop-stale ## [dev] Serve outputs/site on http://localhost:7071 (blocking)
 	@echo "→  http://localhost:$(DEV_PORT)  — Ctrl-C to stop"
 	docker run --rm \
 	  -v $(CURDIR)/outputs/site:/site:ro \
-	  -p $(DEV_PORT):8000 \
+	  -p $(DEV_PORT):$(DEV_PORT) \
 	  --entrypoint python \
-	  $(DEV_IMAGE) -m http.server 8000 --directory /site
+	  $(DEV_IMAGE) -m http.server $(DEV_PORT) --directory /site
 
 .PHONY: dev
-dev: ## [dev] Full pipeline + serve — all-in-one (http://localhost:7071)
+dev: dev-build _dev-stop-stale ## [dev] Build fresh image, run full pipeline + serve (http://localhost:7071)
 	docker run $(_DEV_FLAGS) \
-	  -e DEV_PORT=8000 \
-	  -p $(DEV_PORT):8000 \
+	  --name $(DEV_CONTAINER) \
+	  -e DEV_PORT=$(DEV_PORT) \
+	  -p $(DEV_PORT):$(DEV_PORT) \
 	  $(DEV_IMAGE)
 
+.PHONY: _dev-stop-stale
+_dev-stop-stale: ## Stop any container already bound to DEV_PORT (and remove stale named container)
+	@container=$$(docker ps -q --filter "publish=$(DEV_PORT)"); \
+	if [ -n "$$container" ]; then \
+	  echo "Stopping container $$container occupying port $(DEV_PORT)…"; \
+	  docker stop $$container > /dev/null; \
+	fi
+	@docker rm -f $(DEV_CONTAINER) > /dev/null 2>&1 || true
+
 .PHONY: dev-shell
-dev-shell: ## [dev] Open an interactive shell in the dev container
-	docker run $(_DEV_FLAGS) -it \
-	  --entrypoint bash \
-	  $(DEV_IMAGE)
+dev-shell: ## [dev] Open an interactive shell in the dev container (exec if running)
+	@if docker ps --filter "name=$(DEV_CONTAINER)" --filter "status=running" -q 2>/dev/null | grep -q .; then \
+	  docker exec -it $(DEV_CONTAINER) bash; \
+	else \
+	  docker run $(_DEV_FLAGS) -it --entrypoint bash $(DEV_IMAGE); \
+	fi
 
 # ─── License headers ─────────────────────────────────────────────────────────
 
