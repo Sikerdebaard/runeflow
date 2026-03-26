@@ -26,6 +26,11 @@
 })();
 
 // ── Show all table rows ───────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", function () {
+  var btn = document.getElementById("showAllBtn");
+  if (btn) btn.addEventListener("click", showAllRows);
+});
+
 function showAllRows() {
   const table = document.getElementById("priceTable");
   if (!table) return;
