@@ -104,14 +104,21 @@ inference.
 ## Docker
 
 ```bash
-# Build and run (requires .env with ENTSOE key)
-docker compose up runeflow-export
+# Pull and run the pre-built image (no build step needed)
+docker compose pull
+docker compose up -d
+
+# With Cloudflare Tunnel (production)
+docker compose --profile tunnel up -d
 
 # Intel-optimised variant (scikit-learn-intelex)
 docker compose --profile intel up runeflow-export-intel
+```
 
-# Tariff JSON served on port 8080
-docker compose up runeflow-server
+Pre-built images are published to GHCR after every merge to `main`:
+```
+ghcr.io/sikerdebaard/runeflow:latest
+ghcr.io/sikerdebaard/runeflow:sha-<commit>
 ```
 
 The export container runs a full pipeline at **08:05** and **14:05** (Amsterdam

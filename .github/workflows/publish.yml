@@ -7,8 +7,8 @@
 # Triggers after the Tests workflow passes on main.
 # Publishes the runeflow-export image to GitHub Container Registry (GHCR).
 #
-# Image: ghcr.io/OWNER/runeflow:latest
-#        ghcr.io/OWNER/runeflow:sha-<short>
+# Image: ghcr.io/sikerdebaard/runeflow:latest
+#        ghcr.io/sikerdebaard/runeflow:sha-<short>
 
 name: Publish
 
