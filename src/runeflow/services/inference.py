@@ -245,7 +245,7 @@ class InferenceService:
         logger.info("InferenceService starting for zone=%s", zone)
 
         logger.info("Loading models for zone=%s...", zone)
-        xgb, ext_high, ext_low, imputer, features = self._load_models(zone)
+        xgb, ext_high, ext_low, imputer, features, model_version = self._load_models(zone)
         logger.info(
             "Models loaded: xgb=ok, ext_high=%s, ext_low=%s, features=%d",
             "ok" if ext_high.is_trained else "untrained",
@@ -354,7 +354,7 @@ class InferenceService:
                 n_total,
             )
 
-        return self._build_result(zone, timestamps, det_results, member_results)
+        return self._build_result(zone, timestamps, det_results, member_results, model_version)
 
     # ------------------------------------------------------------------
     def _load_supplemental_forecast(self, zone: str) -> pd.DataFrame | None:
@@ -401,7 +401,9 @@ class InferenceService:
     # ------------------------------------------------------------------
     def _load_models(
         self, zone: str
-    ) -> tuple[XGBoostQuantileModel, ExtremeHighModel, ExtremeLowModel, SimpleImputer, list[str]]:
+    ) -> tuple[
+        XGBoostQuantileModel, ExtremeHighModel, ExtremeLowModel, SimpleImputer, list[str], str
+    ]:
         logger.info("  loading XGBoostQuantileModel...")
         xgb = XGBoostQuantileModel()
         if not xgb.load(self._store, zone):
@@ -428,7 +430,10 @@ class InferenceService:
         features: list[str] = json.loads(raw_features.decode()) if raw_features else []
         logger.info("  imputer ok, %d features", len(features))
 
-        return xgb, ext_high, ext_low, imputer, features
+        raw_version = self._store.load_model(zone, "model_version")
+        model_version: str = raw_version.decode() if raw_version else "unknown"
+
+        return xgb, ext_high, ext_low, imputer, features, model_version
 
     # ------------------------------------------------------------------
     def _build_result(
@@ -437,6 +442,7 @@ class InferenceService:
         timestamps: pd.DatetimeIndex,
         det_results: dict[pd.Timestamp, dict],
         member_results: list[dict[pd.Timestamp, dict]],
+        model_version: str = "unknown",
     ) -> ForecastResult:
         points: list[ForecastPoint] = []
 
@@ -456,8 +462,11 @@ class InferenceService:
 
             if member_preds:
                 arr = np.array(member_preds)
-                ens_lower = float(np.percentile(arr, 2.5))
-                ens_upper = float(np.percentile(arr, 97.5))
+                ens_half = float(np.percentile(arr, 97.5) - np.percentile(arr, 2.5)) / 2
+                # Centre the ensemble spread on the deterministic prediction
+                # so the forecast line sits at the midpoint of the combined band.
+                ens_lower = float(det["prediction"] - ens_half)
+                ens_upper = float(det["prediction"] + ens_half)
                 ens_p25 = float(np.percentile(arr, 25))
                 ens_p50 = float(np.percentile(arr, 50))
                 ens_p75 = float(np.percentile(arr, 75))
@@ -526,5 +535,5 @@ class InferenceService:
             ensemble_members=ens_df,
             model_predictions=model_preds,
             created_at=dt_cls.now(UTC),  # type: ignore[arg-type]
-            model_version="1.0",
+            model_version=model_version,
         )

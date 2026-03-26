@@ -1,0 +1,32 @@
+# runeflow-deploy.timer — pull and deploy the latest Docker image nightly
+#
+# Companion timer for runeflow-deploy.service.
+# Fires once per night; deploy-poll.sh skips the restart if the image
+# hasn't changed since the last pull.
+#
+# Installation (with the service):
+#   sudo cp runeflow-deploy.service runeflow-deploy.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now runeflow-deploy.timer
+#
+# Status:
+#   systemctl list-timers runeflow-deploy.timer
+
+[Unit]
+Description=Runeflow — nightly Docker image update
+
+[Timer]
+# Run at 03:30 local time every night.
+# Off-peak: price data is for the previous/current day, new images are published
+# minutes after a merge to main which typically happens during the day.
+OnCalendar=*-*-* 03:30:00
+
+# Spread runs by up to 10 minutes to avoid hitting GHCR at exactly the same
+# second as other self-hosted deployments.
+RandomizedDelaySec=10min
+
+# If a run was missed (e.g. system was off), catch up once immediately.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

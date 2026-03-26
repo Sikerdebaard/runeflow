@@ -431,8 +431,11 @@ class TestExportTariffsService:
 
         assert out.exists()
         payload = json.loads(out.read_text())
-        assert payload["type"] == "fixed"
-        assert len(payload["zones"]) == 24
+        assert payload["type"] == "forecast"
+        assert len(payload["rates"]) == 24
+        rate = payload["rates"][0]
+        assert {"start", "end", "value"} <= rate.keys()
+        assert rate["start"].endswith("Z")
 
     def test_run_returns_slots(self, real_zone_cfg_nl, tmp_path):
         svc, _, _ = self._make_service(tmp_path)
@@ -1137,7 +1140,7 @@ class TestInferenceService:
             mock_high.return_value.load.return_value = True
             mock_low.return_value.load.return_value = True
 
-            xgb, ext_high, ext_low, imputer, features = svc._load_models("NL")
+            xgb, ext_high, ext_low, imputer, features, model_version = svc._load_models("NL")
 
         assert features == ["feature_a", "feature_b"]
 
@@ -1160,7 +1163,7 @@ class TestInferenceService:
         ):
             mock_xgb.return_value.load.return_value = True
 
-            xgb, ext_high, ext_low, imputer, features = svc._load_models("NL")
+            xgb, ext_high, ext_low, imputer, features, model_version = svc._load_models("NL")
 
         from sklearn.impute import SimpleImputer
 
@@ -1911,7 +1914,9 @@ class TestInferenceServiceRun:
 
         with (
             patch.object(
-                svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)
+                svc,
+                "_load_models",
+                return_value=(xgb, ext_high, ext_low, imputer, features, "202501010000"),
             ),
             patch.object(svc, "_load_supplemental_forecast", return_value=None),
             patch("runeflow.services.inference._run_forecast_worker", return_value=worker_result),
@@ -1982,7 +1987,9 @@ class TestInferenceServiceRun:
 
         with (
             patch.object(
-                svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)
+                svc,
+                "_load_models",
+                return_value=(xgb, ext_high, ext_low, imputer, features, "202501010000"),
             ),
             patch.object(svc, "_load_supplemental_forecast", return_value=ned_df),
             patch("runeflow.services.inference._run_forecast_worker", return_value=worker_result),
@@ -2014,7 +2021,9 @@ class TestInferenceServiceRun:
 
         with (
             patch.object(
-                svc, "_load_models", return_value=(xgb, ext_high, ext_low, imputer, features)
+                svc,
+                "_load_models",
+                return_value=(xgb, ext_high, ext_low, imputer, features, "202501010000"),
             ),
             pytest.raises(RuntimeError, match="No warmup cache"),
         ):

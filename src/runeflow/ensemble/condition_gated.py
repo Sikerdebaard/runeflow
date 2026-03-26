@@ -139,14 +139,15 @@ class ConditionGatedStrategy(EnsembleStrategy):
 
         # ── Interval widening ───────────────────────────────────────────
         disagree_factor = 1 + 0.5 * (1 - model_agreement)
-        centre = (upper + lower) / 2
         half = (upper - lower) / 2 * disagree_factor
 
         wu = np.asarray(weather_uncertainty_factor, dtype=float)
         half = half * wu
 
-        lower_adj = centre - half
-        upper_adj = centre + half
+        # Centre band on the blended prediction so the forecast line
+        # always sits at the midpoint of its uncertainty envelope.
+        lower_adj = prediction - half
+        upper_adj = prediction + half
         uncertainty = upper_adj - lower_adj
 
         return pd.DataFrame(

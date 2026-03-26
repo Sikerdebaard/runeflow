@@ -1,0 +1,67 @@
+# runeflow Development Container
+#
+# A single container for local development: run individual pipeline steps or
+# the full pipeline, then preview the generated site via Python's built-in
+# HTTP server.  No separate nginx, no cron, no non-root user ceremony.
+#
+# The source tree (src/) is bind-mounted at runtime so code changes are
+# picked up immediately — no image rebuild required.
+#
+# Build:
+#   make dev-build
+#
+# Full pipeline + serve (all-in-one):
+#   make dev
+#
+# Individual steps:
+#   make dev-update    # fetch/update historical data
+#   make dev-train     # train model
+#   make dev-warmup    # warm up feature cache
+#   make dev-inference # run inference
+#   make dev-export    # export tariff JSON
+#   make dev-plot      # generate uncertainty chart
+#   make dev-build-site# build static site
+#
+# Just serve already-built site:
+#   make dev-serve
+#
+# Open a shell:
+#   make dev-shell
+
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=30 \
+    TZ=Europe/Amsterdam
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone
+
+WORKDIR /app
+
+# Install the package and all dev extras.
+# src/ is copied here so the editable install resolves correctly at build
+# time; at runtime the bind-mount (-v ./src:/app/src) transparently shadows
+# this copy, giving live code reloading without a rebuild.
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -e ".[dev]"
+
+RUN mkdir -p /app/.cache/runeflow /outputs
+
+COPY docker/entrypoint-oneshot.sh /entrypoint-oneshot.sh
+COPY docker/entrypoint-dev.sh     /entrypoint-dev.sh
+RUN chmod +x /entrypoint-oneshot.sh /entrypoint-dev.sh
+
+# Default: run the full pipeline then start the preview server.
+# Override with --entrypoint runeflow for individual pipeline steps,
+# or --entrypoint bash for an interactive shell.
+ENTRYPOINT ["/entrypoint-dev.sh"]

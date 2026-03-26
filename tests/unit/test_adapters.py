@@ -846,17 +846,33 @@ class TestCachingWeatherAdapter:
         return adapter, inner, store, ws
 
     def test_download_historical_delegates_to_inner(self):
-        """Line 101: download_historical passes through to inner adapter."""
+        """Line 101: download_historical passes through to inner adapter when cache is stale."""
         import datetime as dt
 
         from runeflow.domain.weather import WeatherLocation
 
         adapter, inner, store, ws = self._make_adapter()
+        store.is_historical_weather_fresh.return_value = False
         loc = WeatherLocation(name="nl", lat=52.0, lon=5.0, purpose="primary")
         result = adapter.download_historical([loc], dt.date(2024, 1, 1), dt.date(2024, 1, 2))
 
         assert result is ws
         inner.download_historical.assert_called_once()
+
+    def test_download_historical_cache_hit(self):
+        """download_historical returns cached data when schema matches."""
+        import datetime as dt
+
+        from runeflow.domain.weather import WeatherLocation
+
+        adapter, inner, store, ws = self._make_adapter()
+        store.is_historical_weather_fresh.return_value = True
+        store.load_weather.return_value = ws
+        loc = WeatherLocation(name="nl", lat=52.0, lon=5.0, purpose="primary")
+        result = adapter.download_historical([loc], dt.date(2024, 1, 1), dt.date(2024, 1, 2))
+
+        assert result is ws
+        inner.download_historical.assert_not_called()
 
     def test_download_forecast_cache_hit(self):
         """Lines 109-117: strategy.is_fresh=True and cached data available."""
