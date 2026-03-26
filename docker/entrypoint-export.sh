@@ -212,8 +212,9 @@ try:
     store = inject.instance(DataStore)
     tomorrow = date.today() + timedelta(days=1)
     zone = os.environ.get("ZONE", "NL")
-    df = store.load_prices(zone)
-    if df is not None and not df.empty:
+    series = store.load_prices(zone)
+    if series is not None:
+        df = series.to_dataframe()
         tomorrow_data = df[df.index.date == tomorrow]
         print("yes" if len(tomorrow_data) >= 20 else "no")
     else:
