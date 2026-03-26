@@ -42,9 +42,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Runtime directories
 RUN mkdir -p /app/.cache/runeflow /var/log/runeflow /outputs
 
-# Entrypoint
+# Entrypoints
 COPY docker/entrypoint-export.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY docker/entrypoint-oneshot.sh /entrypoint-oneshot.sh
+RUN chmod +x /entrypoint.sh /entrypoint-oneshot.sh
 
 # Non-root user
 RUN useradd -m -s /bin/bash runeflow && \

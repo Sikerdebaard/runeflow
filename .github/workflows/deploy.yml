@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2024-2026 Thomas Phil — runeflow
+# See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
+
+# ─── Automated deployment to bragi ────────────────────────────────────────────
+#
+# Triggers automatically after the Tests workflow passes on main.
+# Runs on a self-hosted GitHub Actions runner installed directly on bragi.
+#
+# WHY A SELF-HOSTED RUNNER?
+#   bragi has no inbound ports open. A self-hosted runner polls GitHub over
+#   outbound HTTPS — the same channel the Cloudflare tunnel uses — so no
+#   firewall changes are needed.
+#
+# ONE-TIME SETUP ON BRAGI
+# ────────────────────────
+# 1. Create a fine-grained GitHub PAT (or classic PAT with 'repo' scope) and
+#    store it on bragi — only needed for runner registration, not stored here.
+#
+# 2. Follow the runner installation guide from GitHub:
+#      Settings → Actions → Runners → New self-hosted runner → Linux
+#    Run the generated configure + install commands on bragi.
+#    Register with labels:  --labels self-hosted,bragi
+#
+# 3. Start as a systemd service (the install script does this):
+#      sudo ./svc.sh install && sudo ./svc.sh start
+#
+# 4. Clone the repo on bragi and create .env:
+#      git clone https://github.com/YOUR_ORG/runeflow.git /opt/runeflow
+#      cp /opt/runeflow/.env.example /opt/runeflow/.env
+#      # Fill in ENTSOE, NED_API_KEY, CLOUDFLARE_TUNNEL_TOKEN, etc.
+#
+# 5. Set the DEPLOY_PATH repository variable (Settings → Actions → Variables):
+#      DEPLOY_PATH = /opt/runeflow
+#    (defaults to /opt/runeflow if not set)
+#
+# CLOUDFLARE TUNNEL
+# ─────────────────
+# The docker-compose.yml already includes the 'cloudflared' service under the
+# 'tunnel' profile.  This deploy job activates it automatically.
+#
+# One-time Cloudflare setup:
+#   1. Create a tunnel: Zero Trust → Networks → Tunnels → Create tunnel
+#   2. Copy the tunnel token into /opt/runeflow/.env:
+#        CLOUDFLARE_TUNNEL_TOKEN=<...>
+#   3. In the tunnel settings, add a Public Hostname route:
+#        Subdomain: runeflow.yourdomain.com  → http://runeflow-server:8080
+#   4. Run scripts/cloudflare-setup.sh once to bypass bot protection on
+#      JSON/CSV data files (see script for required env vars).
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Tests"]
+    branches: [main]
+    types: [completed]
+
+# Never cancel a deploy in progress; serialize deploys.
+concurrency:
+  group: deploy-bragi
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to bragi
+    if: github.event.workflow_run.conclusion == 'success'
+
+    # The runner is installed natively on bragi — no inbound port needed.
+    runs-on: [self-hosted, bragi]
+
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/runeflow' }}
+
+    steps:
+      - name: Pull latest code
+        run: git -C "$DEPLOY_PATH" pull origin main
+
+      - name: Rebuild and restart services
+        working-directory: ${{ env.DEPLOY_PATH }}
+        run: |
+          docker compose --profile tunnel up -d --build --remove-orphans
+          docker image prune -f
+
+      - name: Verify services running
+        working-directory: ${{ env.DEPLOY_PATH }}
+        run: |
+          sleep 15
+          docker compose --profile tunnel ps

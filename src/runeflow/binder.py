@@ -73,7 +73,9 @@ def configure_injector(
 
             price_adapters.append(EnergyZeroPriceAdapter())
 
-        binder.bind(PricePort, FallbackPriceAdapter(price_adapters))
+        from runeflow.adapters.price.caching import CachingPriceAdapter
+
+        binder.bind(PricePort, CachingPriceAdapter(FallbackPriceAdapter(price_adapters)))
 
         # ── Weather adapter ───────────────────────────────────────────────────
         import datetime
@@ -108,13 +110,19 @@ def configure_injector(
         if zone_cfg.has_ned:
             ned_key = env.get("NED", config.ned_api_key)
             if ned_key:
+                from runeflow.adapters.supplemental.caching import CachingSupplementalAdapter
                 from runeflow.adapters.supplemental.ned import NedAdapter
 
-                binder.bind(SupplementalDataPort, NedAdapter(api_key=ned_key))
+                binder.bind(
+                    SupplementalDataPort, CachingSupplementalAdapter(NedAdapter(api_key=ned_key))
+                )
 
         # ── Validator ─────────────────────────────────────────────────────────
         from runeflow.validators.composite import default_validator
 
         binder.bind(DataValidator, default_validator())
 
-    inject.configure(_binder, allow_override=allow_override)
+    if allow_override:
+        inject.clear_and_configure(_binder)
+    else:
+        inject.configure(_binder)

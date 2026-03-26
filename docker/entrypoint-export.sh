@@ -23,6 +23,7 @@ fi
 ZONE="${ZONE:-NL}"
 PRICE_PROVIDER="${PRICE_PROVIDER:-wholesale}"
 OUTPUT_FILE="${OUTPUT_FILE:-/outputs/tariffs.json}"
+SITE_OUTPUT_DIR="${SITE_OUTPUT_DIR:-/outputs/site}"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 
 echo "==================================="
@@ -31,6 +32,7 @@ echo "==================================="
 echo "Zone:           $ZONE"
 echo "Price Provider: $PRICE_PROVIDER"
 echo "Output File:    $OUTPUT_FILE"
+echo "Site Dir:       $SITE_OUTPUT_DIR"
 echo "Timezone:       $(cat /etc/timezone)"
 echo "==================================="
 
@@ -43,12 +45,13 @@ ENTSOE=$ENTSOE
 ZONE=$ZONE
 PRICE_PROVIDER=$PRICE_PROVIDER
 OUTPUT_FILE=$OUTPUT_FILE
+SITE_OUTPUT_DIR=$SITE_OUTPUT_DIR
 LOG_LEVEL=$LOG_LEVEL
 HOME=/root
 XDG_CACHE_HOME=/app/.cache
 EOF
 
-export ENTSOE ZONE PRICE_PROVIDER OUTPUT_FILE LOG_LEVEL
+export ENTSOE ZONE PRICE_PROVIDER OUTPUT_FILE SITE_OUTPUT_DIR LOG_LEVEL
 export XDG_CACHE_HOME=/app/.cache
 
 # ---------------------------------------------------------------------------
@@ -97,8 +100,12 @@ runeflow plot-uncertainty --zone "$ZONE" \
     --output "$CHART_FILE" >> "$LOGFILE" 2>&1 || \
     echo "[$TIMESTAMP] WARNING: Chart generation failed (non-critical)" >> "$LOGFILE"
 
+echo "[$TIMESTAMP] Building static dashboard..." >> "$LOGFILE"
+runeflow build-site --zones "$ZONE" --output "$SITE_OUTPUT_DIR" >> "$LOGFILE" 2>&1 || \
+    echo "[$TIMESTAMP] WARNING: build-site failed (non-critical)" >> "$LOGFILE"
+
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-echo "[$TIMESTAMP] ✓ Full run complete — output: $OUTPUT_FILE" >> "$LOGFILE"
+echo "[$TIMESTAMP] ✓ Full run complete — output: $OUTPUT_FILE  site: $SITE_OUTPUT_DIR" >> "$LOGFILE"
 echo "" >> "$LOGFILE"
 SCRIPT
 chmod +x /app/run-inference.sh
@@ -140,8 +147,12 @@ runeflow plot-uncertainty --zone "$ZONE" \
     --output "$CHART_FILE" >> "$LOGFILE" 2>&1 || \
     echo "[$TIMESTAMP] WARNING: Chart generation failed (non-critical)" >> "$LOGFILE"
 
+echo "[$TIMESTAMP] Building static dashboard..." >> "$LOGFILE"
+runeflow build-site --zones "$ZONE" --output "$SITE_OUTPUT_DIR" >> "$LOGFILE" 2>&1 || \
+    echo "[$TIMESTAMP] WARNING: build-site failed (non-critical)" >> "$LOGFILE"
+
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-echo "[$TIMESTAMP] ✓ Inference-only run complete — output: $OUTPUT_FILE" >> "$LOGFILE"
+echo "[$TIMESTAMP] ✓ Inference-only run complete — output: $OUTPUT_FILE  site: $SITE_OUTPUT_DIR" >> "$LOGFILE"
 echo "" >> "$LOGFILE"
 SCRIPT
 chmod +x /app/run-inference-only.sh

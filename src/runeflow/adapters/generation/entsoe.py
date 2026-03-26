@@ -78,10 +78,13 @@ class EntsoeGenerationAdapter(GenerationPort):
         self, zone: str, ts_start: pd.Timestamp, ts_end: pd.Timestamp
     ) -> pd.DataFrame | None:
         try:
-            series = self._client.query_load_forecast(zone, start=ts_start, end=ts_end)
-            if series is None or series.empty:
+            result = self._client.query_load_forecast(zone, start=ts_start, end=ts_end)
+            if result is None or result.empty:
                 return None
-            return series.rename("load_forecast_mw").rename_axis("date").to_frame()  # type: ignore[no-any-return]
+            # entsoe-py may return a DataFrame or a Series depending on version
+            series = result.iloc[:, 0] if isinstance(result, pd.DataFrame) else result
+            series = series.rename("load_forecast_mw")
+            return series.rename_axis("date").to_frame()
         except Exception as exc:
             logger.warning(f"[ENTSO-E Generation] Load forecast failed for {zone}: {exc}")
             return None

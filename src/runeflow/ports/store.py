@@ -66,6 +66,15 @@ class DataStore(ABC):
         member: int | None = None,
     ) -> bool: ...
 
+    @abstractmethod
+    def is_historical_weather_fresh(
+        self,
+        zone: str,
+        expected_cols: list[str],
+    ) -> bool:
+        """Return *True* if cached historical weather exists with a schema
+        that is a superset of *expected_cols* (no TTL — eternal cache)."""
+
     # ── Generation ────────────────────────────────────────────────────────────
 
     @abstractmethod

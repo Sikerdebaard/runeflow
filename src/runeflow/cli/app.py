@@ -203,6 +203,57 @@ def plot_uncertainty(
     typer.echo(f"✓ Plot saved to {path}")
 
 
+@app.command("build-site")
+def build_site(
+    output: Path = typer.Option(  # noqa: B008
+        Path("./site"), "--output", "-o", help="Output directory for the static site"
+    ),
+    zones: str | None = typer.Option(
+        None, "--zones", help="Comma-separated zone codes to include (default: all)"
+    ),
+) -> None:
+    """Build a static HTML dashboard under OUTPUT.
+
+    Iterates over every registered zone (or the subset given via --zones),
+    exports tariff JSON + CSV, renders charts, and writes static HTML pages.
+    No server-side code is needed to serve the result — just point nginx at
+    the output directory.
+
+    For local testing:
+
+        runeflow build-site --output ./site
+        python -m http.server 8080 --directory ./site
+    """
+    from runeflow.zones.registry import ZoneRegistry
+
+    zone_list = [z.strip() for z in zones.split(",")] if zones else ZoneRegistry.list_zones()
+
+    output.mkdir(parents=True, exist_ok=True)
+    processed: list[str] = []
+
+    for zone_code in zone_list:
+        typer.echo(f"Building zone: {zone_code}")
+        _setup(zone_code)
+        from runeflow.dashboard.build import BuildSiteZoneService
+
+        svc = BuildSiteZoneService()
+        try:
+            svc.run(output_dir=output)
+            processed.append(zone_code)
+        except Exception as exc:
+            typer.echo(f"  ✗ {zone_code} failed: {exc}", err=True)
+
+    # Global files (meta.json, quality.json, index.html) — use last zone's injector
+    if processed:
+        _setup(processed[-1])
+        from runeflow.dashboard.build import BuildSiteGlobalService
+
+        BuildSiteGlobalService().run(output_dir=output, processed_zones=processed)
+
+    typer.echo(f"✓ Site built in {output}  ({len(processed)}/{len(zone_list)} zones)")
+    typer.echo(f"  Preview: python -m http.server 8080 --directory {output}")
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
