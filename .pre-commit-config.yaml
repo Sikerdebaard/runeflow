@@ -13,30 +13,28 @@ repos:
       - id: debug-statements
       - id: detect-private-key
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.2
+  # ruff and mypy run via `uv run` so they always use the same versions as CI
+  # (pinned in pyproject.toml / uv.lock).  No separate virtualenv is created.
+  - repo: local
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format
+        name: ruff
+        language: system
+        entry: uv run ruff check --fix --exit-non-zero-on-fix
+        types: [python]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
-    hooks:
+      - id: ruff-format
+        name: ruff-format
+        language: system
+        entry: uv run ruff format
+        types: [python]
+
       - id: mypy
-        additional_dependencies:
-          - pandas-stubs>=2.2
-          - types-requests>=2.32
-          - pydantic>=2.9
-          - jinja2>=3.1
-          - pydantic-settings>=2.6
-          - matplotlib>=3.9
-          - holidays>=0.46
-          - typer>=0.12
-          - inject>=5.2
-        args: [--config-file=pyproject.toml]
+        name: mypy
+        language: system
+        entry: uv run mypy src/runeflow
         pass_filenames: false
-        entry: mypy src/runeflow
+        types: [python]
 
   - repo: local
     hooks:

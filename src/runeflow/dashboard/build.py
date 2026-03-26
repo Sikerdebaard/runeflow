@@ -309,9 +309,9 @@ def _render_provider_page(
             s_any: Any = s
             with contextlib.suppress(Exception):
                 if isinstance(s_any, dict):
-                    prices.append(float(s_any.get("value", s_any.get("price", 0))))
+                    prices.append(float(s_any.get("value", s_any.get("price", 0)) or 0))
                 else:
-                    prices.append(float(getattr(s_any, "value", getattr(s_any, "price", 0))))
+                    prices.append(float(getattr(s_any, "value", getattr(s_any, "price", 0)) or 0))
         if prices:
             day_min, day_max = min(prices), max(prices)
             day_range = day_max - day_min or 1.0
