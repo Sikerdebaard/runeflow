@@ -41,7 +41,7 @@ class ParquetStore(DataStore):
         # Append / merge with existing
         existing = self._read_parquet(path)
         if existing is not None and not existing.empty:
-            combined = pd.concat([existing.reset_index(), df], ignore_index=True)
+            combined = pd.concat([existing.reset_index(drop=True), df], ignore_index=True)
             combined.drop_duplicates(subset=["date"], keep="last", inplace=True)
             combined.sort_values("date", inplace=True)
             combined.reset_index(drop=True, inplace=True)
