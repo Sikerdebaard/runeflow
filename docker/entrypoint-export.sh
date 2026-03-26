@@ -4,9 +4,11 @@ set -e
 # runeflow Tariff Exporter Entrypoint
 # Runs inference on a schedule and writes tariff JSON.
 #
-# Scheduling:
-#   - Daily training + inference at 08:05 and 14:05 Amsterdam time
-#   - Polls every 15 min (12:00–16:00) for new ENTSO-E day-ahead prices
+# Scheduling (Amsterdam / Europe/Amsterdam time):
+#   - 08:05  Full run: update-data → train → inference → export → site
+#   - 20:05  Full run: update-data → train → inference → export → site
+#   - 12:00–16:00 every 15 min: price watcher → if new day-ahead prices
+#             detected, run update-data → inference → export → site (no retrain)
 
 # ---------------------------------------------------------------------------
 # Required environment variables
@@ -68,11 +70,14 @@ LOGFILE="/var/log/runeflow/inference.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 cd /app
 
-echo "[$TIMESTAMP] ── Full inference run ── zone=$ZONE" >> "$LOGFILE"
+echo "[$TIMESTAMP] ── Full run (update + train + inference) ── zone=$ZONE" >> "$LOGFILE"
 
+# update-data MUST succeed — everything downstream depends on fresh data.
 echo "[$TIMESTAMP] Updating data..." >> "$LOGFILE"
-runeflow update-data --zone "$ZONE" >> "$LOGFILE" 2>&1 || \
-    echo "[$TIMESTAMP] WARNING: Data update had issues, continuing..." >> "$LOGFILE"
+runeflow update-data --zone "$ZONE" >> "$LOGFILE" 2>&1 || {
+    echo "[$TIMESTAMP] ERROR: Data update failed — aborting run." >> "$LOGFILE"
+    exit 1
+}
 
 echo "[$TIMESTAMP] Training model..." >> "$LOGFILE"
 runeflow train --zone "$ZONE" >> "$LOGFILE" 2>&1 || {
@@ -125,7 +130,14 @@ LOGFILE="/var/log/runeflow/inference.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 cd /app
 
-echo "[$TIMESTAMP] ── Inference-only run ── zone=$ZONE" >> "$LOGFILE"
+echo "[$TIMESTAMP] ── Price-update inference run (update + inference, no retrain) ── zone=$ZONE" >> "$LOGFILE"
+
+# Fetch latest prices before inference — required for meaningful output.
+echo "[$TIMESTAMP] Updating data..." >> "$LOGFILE"
+runeflow update-data --zone "$ZONE" >> "$LOGFILE" 2>&1 || {
+    echo "[$TIMESTAMP] ERROR: Data update failed — aborting inference-only run." >> "$LOGFILE"
+    exit 1
+}
 
 echo "[$TIMESTAMP] Warming up cache..." >> "$LOGFILE"
 runeflow warmup-cache --zone "$ZONE" >> "$LOGFILE" 2>&1 || \
@@ -231,9 +243,11 @@ cat > /etc/cron.d/runeflow << 'CRON'
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
 
+# Full run: update-data → train → warmup → inference → export → site
 5 8  * * * root /app/run-inference.sh      >> /var/log/runeflow/cron.log 2>&1
-5 14 * * * root /app/run-inference.sh      >> /var/log/runeflow/cron.log 2>&1
+5 20 * * * root /app/run-inference.sh      >> /var/log/runeflow/cron.log 2>&1
 # Day-ahead price watcher (12:00–16:00 Amsterdam, every 15 min)
+# Triggers update-data → inference → export → site when new prices are detected
 */15 12-16 * * * root /app/check-prices.sh >> /var/log/runeflow/cron.log 2>&1
 CRON
 chmod 0644 /etc/cron.d/runeflow
@@ -249,10 +263,15 @@ mkdir -p "$(dirname "$OUTPUT_FILE")" /app/.cache/runeflow
 # ---------------------------------------------------------------------------
 # Startup: run once immediately so the output file is available right away
 # ---------------------------------------------------------------------------
-echo "Running initial inference on startup..."
+echo "Running initial full pipeline on startup (update-data → train → inference)..."
+echo "On a fresh server with an empty cache this will take several minutes."
 /app/run-inference.sh || {
-    echo "WARNING: Initial inference failed (expected if no model trained yet)."
-    echo "The system will retry at the next scheduled time."
+    echo ""
+    echo "WARNING: Initial pipeline run failed."
+    echo "This is normal on a completely fresh install where the data cache is empty."
+    echo "The most common cause is a transient API error during 'update-data'."
+    echo "The system will retry automatically at the next scheduled run (08:05 and 20:05 AMS)."
+    echo "Check /var/log/runeflow/inference.log for details."
 }
 
 echo ""

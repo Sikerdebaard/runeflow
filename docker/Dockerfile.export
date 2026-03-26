@@ -1,9 +1,10 @@
 # runeflow Tariff Exporter container
 # Runs inference on a schedule and writes tariff JSON.
 #
-# Scheduling (via entrypoint cron):
-#   - Daily at 08:00 Amsterdam time
-#   - Polls every 15 min for new ENTSO-E day-ahead prices (~13:00 CET)
+# Scheduling (via entrypoint cron, Amsterdam / Europe/Amsterdam time):
+#   - 08:05 and 20:05 — full run: update-data → train → inference → export → site
+#   - 12:00–16:00 every 15 min — price watcher: if new day-ahead prices detected,
+#     runs update-data → inference → export → site (no retrain)
 #
 # Build:
 #   docker build -f docker/Dockerfile.export -t runeflow:export .

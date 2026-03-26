@@ -15,11 +15,12 @@
 #        sudo systemctl daemon-reload
 #        sudo systemctl enable --now runeflow-deploy.timer
 #
-#   2. For private repos (GHCR images), log in to GHCR once on bragi:
-#        docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin <<< "$GHCR_PAT"
+#   2. The GHCR image is public — no login needed for pulls.
+#      For pushes or private repos, authenticate once:
+#        docker login ghcr.io -u sikerdebaard --password-stdin <<< "$GHCR_PAT"
 #
-#   3. Set RUNEFLOW_IMAGE in .env:
-#        RUNEFLOW_IMAGE=ghcr.io/YOUR_ORG/runeflow:latest
+#   3. RUNEFLOW_IMAGE defaults to ghcr.io/sikerdebaard/runeflow:latest.
+#      Override in .env only if you publish your own fork.
 #
 # Environment (read from .env automatically):
 #   RUNEFLOW_IMAGE  — full GHCR image reference  (required)
@@ -54,7 +55,7 @@ if [[ -f .env ]]; then
   set -a; source .env; set +a
 fi
 
-IMAGE="${RUNEFLOW_IMAGE:?RUNEFLOW_IMAGE must be set in .env (e.g. ghcr.io/YOUR_ORG/runeflow:latest)}"
+IMAGE="${RUNEFLOW_IMAGE:-ghcr.io/sikerdebaard/runeflow:latest}"
 
 # ── Pull image ────────────────────────────────────────────────────────────────
 log "Checking for updates: $IMAGE"
