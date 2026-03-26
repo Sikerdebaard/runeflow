@@ -1,0 +1,42 @@
+# runeflow-deploy.service — oneshot deploy unit
+#
+# Run the deploy-poll.sh script as a systemd oneshot service.
+# Triggered by runeflow-deploy.timer every 5 minutes.
+#
+# Installation:
+#   sudo cp runeflow-deploy.service runeflow-deploy.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now runeflow-deploy.timer
+#
+# Logs:
+#   journalctl -u runeflow-deploy.service -f
+#
+# Manual run:
+#   sudo systemctl start runeflow-deploy.service
+
+[Unit]
+Description=Runeflow — deploy latest main branch
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Run as the user who owns /opt/runeflow (replace 'runeflow' with actual user).
+# Create a dedicated user:  sudo useradd -r -s /sbin/nologin -G docker runeflow
+User=runeflow
+Group=docker
+
+# Load DEPLOY_PATH, DASHBOARD_PORT etc. from .env if present.
+EnvironmentFile=-/opt/runeflow/.env
+
+WorkingDirectory=/opt/runeflow
+ExecStart=/opt/runeflow/scripts/deploy-poll.sh
+
+# Capture stdout/stderr to the journal under the identifier 'runeflow-deploy'.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=runeflow-deploy
+
+# Give the build plenty of time (image pulls can be slow).
+TimeoutStartSec=10min

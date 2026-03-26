@@ -1,112 +1,147 @@
-# runeflow — Docker Compose
+# Runeflow — Docker Compose
 #
 # Usage:
-#   1. Copy .env.example to .env and fill in ENTSOE key
-#   2. docker compose up -d
-#   3. docker compose logs -f
+#   1. Copy .env.example to .env and fill in your values
+#   2. Run: docker-compose up -d
+#   3. View logs: docker-compose logs -f
 #
 # Services:
-#   runeflow-evcc       — Standard EVCC exporter (Python 3.11-slim)
-#   runeflow-evcc-intel — Intel-optimised variant (use --profile intel)
-#   runeflow-server     — Tiny nginx to serve tariffs-evcc.json over HTTP
+#   - runeflow-export: Inference + tariff JSON export (daily + on new price data)
+#   - runeflow-export-intel: Same, Intel-optimised (profile: intel)
+#   - runeflow-server: nginx serving tariffs.json over HTTP
 
 services:
-
-  # ---------------------------------------------------------------------------
-  # Standard EVCC exporter
-  # Runs: update-data → train → warmup-cache → inference → export-evcc + plot
-  #   - Daily at 08:05 and 14:05 Amsterdam time
-  #   - Day-ahead price watcher every 15 min (12:00–16:00)
-  # ---------------------------------------------------------------------------
-  runeflow-evcc:
+  # Runs inference on a schedule and exports price data as tariff JSON.
+  runeflow-export:
+    # Pull pre-built image from GHCR in production.
+    # Set in .env:  RUNEFLOW_IMAGE=ghcr.io/YOUR_ORG/runeflow:latest
+    # Falls back to a local build tag when RUNEFLOW_IMAGE is not set.
+    image: ${RUNEFLOW_IMAGE:-runeflow-export}
     build:
       context: .
-      dockerfile: docker/Dockerfile.evcc
-    container_name: runeflow-evcc
+      dockerfile: docker/Dockerfile.export
+    container_name: runeflow-export
     restart: unless-stopped
 
     environment:
-      # Required: ENTSO-E transparency platform API key
+      # Required: ENTSO-E API key
       - ENTSOE=${ENTSOE}
 
-      # Optional
+      # Optional: Configuration
       - ZONE=${ZONE:-NL}
-      - PRICE_PROVIDER=${EVCC_PRICE_PROVIDER:-wholesale}
-      - OUTPUT_FILE=/outputs/tariffs-evcc.json
+      - PRICE_PROVIDER=${TARIFF_PRICE_PROVIDER:-wholesale}
+      - OUTPUT_FILE=/outputs/tariffs.json
+      - SITE_OUTPUT_DIR=/outputs/site
+
+      # Optional: Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
     volumes:
-      # Persist models and price data across restarts
-      - runeflow-cache:/app/.cache/runeflow
-      - runeflow-logs:/var/log/runeflow
-      - ${EVCC_OUTPUT_DIR:-./outputs}:/outputs
+      # Persist cache (models, inference results) between container restarts
+      - runeflow-cache:/app/.cache
 
+      # Persist logs
+      - runeflow-logs:/var/log/runeflow
+
+      # Output directory for tariff JSON file
+      - ${TARIFF_OUTPUT_DIR:-./outputs}:/outputs
+
+    # Health check - verify the tariff file was updated recently (within 25 hours)
     healthcheck:
-      # Verify the tariff file was updated within the last 25 hours
-      test: ["CMD", "sh", "-c", "find /outputs/tariffs-evcc.json -mmin -1500 | grep -q ."]
+      test: ["CMD", "sh", "-c", "find /outputs/tariffs.json -mmin -1500 | grep -q ."]
       interval: 1h
       timeout: 10s
       retries: 3
-      start_period: 10m
+      start_period: 5m
 
-  # ---------------------------------------------------------------------------
-  # Intel-optimised EVCC exporter (drop-in replacement — use one or the other)
-  # Enable with: docker compose --profile intel up -d
-  # ---------------------------------------------------------------------------
-  runeflow-evcc-intel:
+  # Intel-optimized export service
+  # Uses Intel Extension for Scikit-learn (oneDAL) and Intel-optimized XGBoost
+  # for faster training and inference on Intel CPUs.
+  # Drop-in replacement for runeflow-export — use one or the other.
+  runeflow-export-intel:
+    image: ${RUNEFLOW_IMAGE_INTEL:-runeflow-export-intel}
     build:
       context: .
       dockerfile: docker/Dockerfile.intel
-    container_name: runeflow-evcc-intel
+    container_name: runeflow-export-intel
     restart: unless-stopped
     profiles:
       - intel
 
     environment:
+      # Required: ENTSO-E API key
       - ENTSOE=${ENTSOE}
+
+      # Optional: Configuration
       - ZONE=${ZONE:-NL}
-      - PRICE_PROVIDER=${EVCC_PRICE_PROVIDER:-wholesale}
-      - OUTPUT_FILE=/outputs/tariffs-evcc.json
+      - PRICE_PROVIDER=${TARIFF_PRICE_PROVIDER:-wholesale}
+      - OUTPUT_FILE=/outputs/tariffs.json
+      - SITE_OUTPUT_DIR=/outputs/site
+
+      # Optional: Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
-    # Pass through the Intel GPU render node for XPU acceleration.
-    # Find the GID with:  getent group render | cut -d: -f3
+    # Pass through the Intel GPU (DRI render node) for XPU acceleration.
+    # The render group GID must match the host — find it with:
+    #   getent group render | cut -d: -f3
     devices:
       - /dev/dri:/dev/dri
     group_add:
-      - "${RENDER_GID:-105}"
+      - "${RENDER_GID:-105}"  # Alternatively run getent group render | cut -d: -f3 to get the GID
 
     volumes:
-      - runeflow-cache:/app/.cache/runeflow
-      - runeflow-logs:/var/log/runeflow
-      - ${EVCC_OUTPUT_DIR:-./outputs}:/outputs
+      # Persist cache (models, inference results) between container restarts
+      - runeflow-cache:/app/.cache
 
+      # Persist logs
+      - runeflow-logs:/var/log/runeflow
+
+      # Output directory for tariff JSON file
+      - ${TARIFF_OUTPUT_DIR:-./outputs}:/outputs
+
+    # Health check - verify the tariff file was updated recently (within 25 hours)
     healthcheck:
-      test: ["CMD", "sh", "-c", "find /outputs/tariffs-evcc.json -mmin -1500 | grep -q ."]
+      test: ["CMD", "sh", "-c", "find /outputs/tariffs.json -mmin -1500 | grep -q ."]
       interval: 1h
       timeout: 10s
       retries: 3
-      start_period: 10m
+      start_period: 5m
 
-  # ---------------------------------------------------------------------------
-  # nginx: serves tariffs-evcc.json over HTTP for evcc to consume
-  # Default: http://localhost:8080/tariffs-evcc.json
-  # ---------------------------------------------------------------------------
+  # Static dashboard served by nginx.
+  # Serves the HTML/JSON/CSV/PNG files generated by `runeflow build-site`.
+  # For local testing access http://localhost:8080 directly.
+  # For production, put cloudflared in front (see 'tunnel' profile below).
   runeflow-server:
     image: nginx:alpine
     container_name: runeflow-server
     restart: unless-stopped
-    ports:
-      - "${EVCC_SERVER_PORT:-8080}:80"
     volumes:
-      - ${EVCC_OUTPUT_DIR:-./outputs}:/usr/share/nginx/html:ro
+      - ${TARIFF_OUTPUT_DIR:-./outputs}/site:/usr/share/nginx/html:ro
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - runeflow-evcc
+      - runeflow-export
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/tariffs-evcc.json"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
       interval: 1m
       timeout: 5s
       retries: 3
+
+  # Cloudflare Tunnel — outbound-only public HTTPS exposure (Zero Trust).
+  # Requires CLOUDFLARE_TUNNEL_TOKEN in your .env file.
+  # One-time setup: create a tunnel in Zero Trust → Networks → Tunnels,
+  # then add a Public Hostname route to http://runeflow-server:8080.
+  # Start with:  docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: runeflow-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - runeflow-server
+    profiles:
+      - tunnel
 
 volumes:
   runeflow-cache:
