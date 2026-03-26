@@ -109,6 +109,38 @@ echo "[$TIMESTAMP] Building static dashboard..." >> "$LOGFILE"
 runeflow build-site --zones "$ZONE" --output "$SITE_OUTPUT_DIR" >> "$LOGFILE" 2>&1 || \
     echo "[$TIMESTAMP] WARNING: build-site failed (non-critical)" >> "$LOGFILE"
 
+# If tomorrow's day-ahead prices are already in the store, stamp the price-watcher
+# state file so the mid-day watcher doesn't fire a redundant inference-only run.
+STATEFILE="/app/.cache/runeflow/entsoe_last_processed.txt"
+TOMORROW_DATE=$(date -d "tomorrow" '+%Y-%m-%d')
+PRICES_PRESENT=$(python3 - << PYTHON
+import os, sys
+os.environ.setdefault("XDG_CACHE_HOME", "/app/.cache")
+try:
+    from runeflow.binder import configure_injector
+    configure_injector(os.environ.get("ZONE", "NL"))
+    import inject
+    from runeflow.ports.store import DataStore
+    from datetime import date, timedelta
+    store = inject.instance(DataStore)
+    tomorrow = date.today() + timedelta(days=1)
+    zone = os.environ.get("ZONE", "NL")
+    series = store.load_prices(zone)
+    if series is not None:
+        df = series.to_dataframe()
+        print("yes" if len(df[df.index.date == tomorrow]) >= 20 else "no")
+    else:
+        print("no")
+except Exception:
+    print("no")
+PYTHON
+)
+if [ "$PRICES_PRESENT" = "yes" ]; then
+    mkdir -p "$(dirname "$STATEFILE")"
+    echo "$TOMORROW_DATE" > "$STATEFILE"
+    echo "[$TIMESTAMP] Day-ahead prices for $TOMORROW_DATE already present — price watcher suppressed." >> "$LOGFILE"
+fi
+
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 echo "[$TIMESTAMP] ✓ Full run complete — output: $OUTPUT_FILE  site: $SITE_OUTPUT_DIR" >> "$LOGFILE"
 echo "" >> "$LOGFILE"
