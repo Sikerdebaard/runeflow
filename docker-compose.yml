@@ -14,9 +14,9 @@ services:
   # Runs inference on a schedule and exports price data as tariff JSON.
   runeflow-export:
     # Pull pre-built image from GHCR in production.
-    # Set in .env:  RUNEFLOW_IMAGE=ghcr.io/YOUR_ORG/runeflow:latest
-    # Falls back to a local build tag when RUNEFLOW_IMAGE is not set.
-    image: ${RUNEFLOW_IMAGE:-runeflow-export}
+    # Set in .env:  RUNEFLOW_IMAGE=ghcr.io/sikerdebaard/runeflow:latest
+    # Falls back to the pre-built GHCR image when RUNEFLOW_IMAGE is not set.
+    image: ${RUNEFLOW_IMAGE:-ghcr.io/sikerdebaard/runeflow:latest}
     build:
       context: .
       dockerfile: docker/Dockerfile.export
