@@ -32,13 +32,14 @@ services:
       - PRICE_PROVIDER=${TARIFF_PRICE_PROVIDER:-wholesale}
       - OUTPUT_FILE=/outputs/tariffs.json
       - SITE_OUTPUT_DIR=/outputs/site
+      - XDG_CACHE_HOME=/cache
 
       # Optional: Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
     volumes:
       # Persist cache (models, inference results) between container restarts
-      - runeflow-cache:/app/.cache
+      - runeflow-cache:/cache
 
       # Persist logs
       - runeflow-logs:/var/log/runeflow
@@ -77,6 +78,7 @@ services:
       - PRICE_PROVIDER=${TARIFF_PRICE_PROVIDER:-wholesale}
       - OUTPUT_FILE=/outputs/tariffs.json
       - SITE_OUTPUT_DIR=/outputs/site
+      - XDG_CACHE_HOME=/cache
 
       # Optional: Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -91,7 +93,7 @@ services:
 
     volumes:
       # Persist cache (models, inference results) between container restarts
-      - runeflow-cache:/app/.cache
+      - runeflow-cache:/cache
 
       # Persist logs
       - runeflow-logs:/var/log/runeflow
