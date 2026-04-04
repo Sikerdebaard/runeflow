@@ -278,10 +278,11 @@ PATH=/usr/local/bin:/usr/bin:/bin
 
 # Full run: update-data → train → warmup → inference → export → site
 5 8  * * * root /app/run-inference.sh      >> /var/log/runeflow/cron.log 2>&1
+30 14 * * * root /app/run-inference.sh      >> /var/log/runeflow/cron.log 2>&1
 5 20 * * * root /app/run-inference.sh      >> /var/log/runeflow/cron.log 2>&1
 # Day-ahead price watcher (12:00–16:00 Amsterdam, every 15 min)
 # Triggers update-data → inference → export → site when new prices are detected
-*/15 12-16 * * * root /app/check-prices.sh >> /var/log/runeflow/cron.log 2>&1
+## */15 12-16 * * * root /app/check-prices.sh >> /var/log/runeflow/cron.log 2>&1
 CRON
 chmod 0644 /etc/cron.d/runeflow
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,9 +57,23 @@ class AppConfig(BaseSettings):
     ned_api_key: str = ""
 
     # ── Open-Meteo API endpoints ──────────────────────────────────────────────
+    # Set OPENMETEO_BASE_URL to override all three endpoints at once (e.g. for
+    # a self-hosted instance).  Individual endpoint vars are used as fallbacks
+    # when OPENMETEO_BASE_URL is not set.
+    openmeteo_base_url: str = ""
     openmeteo_historical_api: str = "https://archive-api.open-meteo.com/v1/archive"
     openmeteo_forecast_api: str = "https://api.open-meteo.com/v1/forecast"
     openmeteo_ensemble_api: str = "https://ensemble-api.open-meteo.com/v1/ensemble"
+
+    @model_validator(mode="after")
+    def _apply_openmeteo_base_url(self) -> AppConfig:
+        """When OPENMETEO_BASE_URL is set, derive all three endpoint URLs from it."""
+        if self.openmeteo_base_url:
+            base = self.openmeteo_base_url.rstrip("/")
+            self.openmeteo_historical_api = f"{base}/v1/archive"
+            self.openmeteo_forecast_api = f"{base}/v1/forecast"
+            self.openmeteo_ensemble_api = f"{base}/v1/ensemble"
+        return self
 
     # ── Inference ─────────────────────────────────────────────────────────────
     inference_warmup_days: int = 16
