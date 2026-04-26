@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import cast
 
 import typer
 from loguru import logger
@@ -203,6 +204,32 @@ def plot_uncertainty(
     typer.echo(f"✓ Plot saved to {path}")
 
 
+@app.command("export-performance")
+def export_performance(
+    output: Path = typer.Option(  # noqa: B008
+        Path("./site/api/performance.json"),
+        "--output",
+        "-o",
+        help="Output JSON path",
+    ),
+    zones: str | None = typer.Option(
+        None, "--zones", help="Comma-separated zone codes (default: all)"
+    ),
+) -> None:
+    """Export model performance metrics as JSON."""
+    from runeflow.zones.registry import ZoneRegistry
+
+    zone_list = [z.strip() for z in zones.split(",")] if zones else ZoneRegistry.list_zones()
+    if zone_list:
+        _setup(zone_list[0])
+
+    from runeflow.services.export_performance import ExportPerformanceService
+
+    svc = ExportPerformanceService()
+    svc.run(output_path=output, zones=zone_list)
+    typer.echo(f"✓ Performance exported for {len(zone_list)} zones to {output}")
+
+
 @app.command("build-site")
 def build_site(
     output: Path = typer.Option(  # noqa: B008
@@ -232,8 +259,15 @@ def build_site(
     processed: list[str] = []
 
     for zone_code in zone_list:
-        typer.echo(f"Building zone: {zone_code}")
         _setup(zone_code)
+        import inject
+
+        from runeflow.ports.store import DataStore
+
+        if cast(DataStore, inject.instance(DataStore)).load_latest_forecast(zone_code) is None:
+            typer.echo(f"  ⚠ {zone_code} skipped — no forecast data available yet")
+            continue
+        typer.echo(f"Building zone: {zone_code}")
         from runeflow.dashboard.build import BuildSiteZoneService
 
         svc = BuildSiteZoneService()
@@ -252,6 +286,169 @@ def build_site(
 
     typer.echo(f"✓ Site built in {output}  ({len(processed)}/{len(zone_list)} zones)")
     typer.echo(f"  Preview: python -m http.server 8080 --directory {output}")
+
+
+@app.command("prefetch-archive")
+def prefetch_archive(
+    zones: str | None = typer.Option(
+        None, "--zones", help="Comma-separated zone codes (default: all)"
+    ),
+    status_file: Path | None = typer.Option(  # noqa: B008
+        None, "--status-file", help="Write JSON progress to FILE (updated after each zone)"
+    ),
+    pass_number: int = typer.Option(1, "--pass", help="Pass counter shown on the status page"),
+) -> None:
+    """Download and cache the historical weather archive for all configured zones.
+
+    Each zone's full historical date range is fetched in quarterly chunks and
+    stored with NEVER_EXPIRE caching in the Open-Meteo HTTP cache.  Already-
+    cached quarters are skipped instantly, so this command is safe to interrupt
+    and restart — it always picks up where it left off.
+
+    Designed to warm the cache before the export container runs its first full
+    pipeline, so that archive downloads do not stall the daily inference cycle.
+    No ENTSOE key is required.
+    """
+    import datetime
+    import json
+    import os
+    import time
+
+    import inject
+
+    from runeflow.exceptions import DailyRateLimitError
+    from runeflow.ports.store import DataStore
+    from runeflow.ports.weather import WeatherPort
+    from runeflow.zones.config import ZoneConfig
+    from runeflow.zones.registry import ZoneRegistry
+
+    zone_list = [z.strip() for z in zones.split(",")] if zones else ZoneRegistry.list_zones()
+
+    started_at = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    run_start = time.monotonic()
+    zones_state: dict[str, dict] = {z: {"status": "pending"} for z in zone_list}
+    skipped: list[str] = []
+    downloaded: list[str] = []
+    failed: list[str] = []
+
+    def _write_status(in_progress: str | None = None) -> None:
+        if status_file is None:
+            return
+        status_file.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "started_at": started_at,
+            "updated_at": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "pass": pass_number,
+            "elapsed_seconds": round(time.monotonic() - run_start, 1),
+            "total": len(zone_list),
+            "downloaded": len(downloaded),
+            "skipped": len(skipped),
+            "failed_count": len(failed),
+            "in_progress": in_progress,
+            "zones": zones_state,
+        }
+        tmp = status_file.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, status_file)
+
+    _write_status()  # initial state — all zones pending
+
+    for i, zone_code in enumerate(zone_list):
+        if i > 0:
+            # Brief pause between zones — courtesy rate-limit buffer.
+            time.sleep(5)
+
+        typer.echo(f"[{zone_code}] checking archive…")
+        zones_state[zone_code] = {"status": "in_progress"}
+        _write_status(in_progress=zone_code)
+        _setup(zone_code)
+
+        zone_cfg: ZoneConfig = inject.instance(ZoneConfig)
+        store: DataStore = cast(DataStore, inject.instance(DataStore))
+        weather_port: WeatherPort = cast(WeatherPort, inject.instance(WeatherPort))
+
+        year_list = list(zone_cfg.historical_years)
+        start = datetime.date(year_list[0], 1, 1)
+        # end date is previous year's December 31, inclusive — we assume the archive
+        # is complete up to the end of last year, but not necessarily for the current year
+        current_year = datetime.date.today().year
+        end = datetime.date(current_year - 1, 12, 31)
+        locations = list(zone_cfg.weather_locations)
+
+        zone_start = time.monotonic()
+        existing = store.load_weather(zone_code, start, end)
+        full_coverage = False
+        if existing is not None:
+            try:
+                import pandas as pd
+
+                df = existing.to_dataframe()
+                if not df.empty and isinstance(df.index, pd.DatetimeIndex):
+                    data_start = df.index.min().date()
+                    data_end = df.index.max().date()
+                    # Require coverage of the full requested range.
+                    # data_end only needs to reach end - 1 day because hourly
+                    # data for the last calendar date has timestamps on that
+                    # date (e.g. 2025-12-31 23:00), so .date() == end - 1 day.
+                    full_coverage = data_start <= start and data_end >= end - datetime.timedelta(
+                        days=1
+                    )
+            except Exception:
+                pass
+        if full_coverage:
+            typer.echo("  ✓ already in store, skipping")
+            zones_state[zone_code] = {
+                "status": "skipped",
+                "duration_seconds": round(time.monotonic() - zone_start, 1),
+            }
+            skipped.append(zone_code)
+            _write_status()
+            continue
+
+        try:
+            series = weather_port.download_historical(locations, start, end)
+            store.save_weather(series, zone_code)
+            zones_state[zone_code] = {
+                "status": "downloaded",
+                "duration_seconds": round(time.monotonic() - zone_start, 1),
+            }
+            downloaded.append(zone_code)
+            typer.echo("  ✓ downloaded and cached")
+        except DailyRateLimitError as exc:
+            typer.echo(f"  ✗ daily API limit reached: {exc}", err=True)
+            zones_state[zone_code] = {
+                "status": "failed",
+                "error": str(exc)[:200],
+                "duration_seconds": round(time.monotonic() - zone_start, 1),
+            }
+            remaining = [z for z in zone_list if zones_state[z]["status"] == "pending"]
+            for z in remaining:
+                zones_state[z]["status"] = "daily_limit"
+            _write_status()
+            typer.echo(
+                f"  Stopping — {len(remaining)} zone(s) skipped. Retry tomorrow.",
+                err=True,
+            )
+            raise typer.Exit(2) from None
+        except Exception as exc:
+            typer.echo(f"  ✗ failed: {exc}", err=True)
+            zones_state[zone_code] = {
+                "status": "failed",
+                "error": str(exc)[:200],
+                "duration_seconds": round(time.monotonic() - zone_start, 1),
+            }
+            failed.append(zone_code)
+
+        _write_status()
+
+    _write_status()  # final — in_progress cleared
+    typer.echo(
+        f"\n✓ Archive prefetch complete — "
+        f"downloaded={len(downloaded)}  skipped={len(skipped)}  failed={len(failed)}"
+    )
+    if failed:
+        typer.echo(f"  Failed zones: {', '.join(failed)}", err=True)
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------

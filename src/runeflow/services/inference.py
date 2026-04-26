@@ -2,8 +2,9 @@
 # Copyright (C) 2024-2026 Thomas Phil — runeflow
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
-"""InferenceService — autoregressive 9-day price forecast with 51-member
-weather ensemble for uncertainty quantification.
+"""InferenceService — autoregressive 9-day price forecast with mixed
+weather ensemble (ICON-EU + ECMWF IFS, 91 members) for uncertainty
+quantification.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
 
+from runeflow.adapters.weather.openmeteo import N_MIXED_ENSEMBLE_MEMBERS
 from runeflow.domain.forecast import ForecastPoint, ForecastResult
 from runeflow.ensemble.condition_gated import ConditionGatedStrategy
 from runeflow.features import INFERENCE_WARMUP_DAYS, build_pipeline
@@ -39,7 +41,9 @@ TARGET_COLUMN = "Price_EUR_MWh"
 # Uncertainty grows with forecast distance (1 % per hour, max 3×)
 BASE_UNCERTAINTY_GROWTH = 0.01
 MAX_UNCERTAINTY_FACTOR = 3.0
-N_ENSEMBLE_MEMBERS = 51
+
+# Mixed ensemble: 40 ICON-EU (hourly, 5 d) + 51 ECMWF IFS (3 h→1 h, 9 d)
+N_ENSEMBLE_MEMBERS = N_MIXED_ENSEMBLE_MEMBERS
 
 
 # ---------------------------------------------------------------------------

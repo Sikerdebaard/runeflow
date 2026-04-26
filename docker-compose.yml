@@ -28,14 +28,23 @@ services:
       - ENTSOE=${ENTSOE}
 
       # Optional: Configuration
-      - ZONE=${ZONE:-NL}
+      - ZONES=${ZONES:-ALL}
       - PRICE_PROVIDER=${TARIFF_PRICE_PROVIDER:-wholesale}
-      - OUTPUT_FILE=/outputs/tariffs.json
+      - OUTPUT_DIR=/outputs
       - SITE_OUTPUT_DIR=/outputs/site
       - XDG_CACHE_HOME=/cache
 
       # Optional: Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+      # Optional: Self-hosted Open-Meteo (see --profile open-meteo)
+      # Both deterministic (ifs025) and ensemble (ifs025_ensemble) data can be
+      # self-hosted. Set OPENMETEO_FORECAST_API and/or OPENMETEO_ENSEMBLE_API
+      # to route queries to the local container. OPENMETEO_BASE_URL overrides
+      # all three endpoints at once (forecast, ensemble, and historical archive).
+      - OPENMETEO_BASE_URL=${OPENMETEO_BASE_URL:-}
+      - OPENMETEO_FORECAST_API=${OPENMETEO_FORECAST_API:-}
+      - OPENMETEO_ENSEMBLE_API=${OPENMETEO_ENSEMBLE_API:-}
 
     volumes:
       # Persist cache (models, inference results) between container restarts
@@ -47,9 +56,9 @@ services:
       # Output directory for tariff JSON file
       - ${TARIFF_OUTPUT_DIR:-./outputs}:/outputs
 
-    # Health check - verify the tariff file was updated recently (within 25 hours)
+    # Health check - verify the site was updated recently (within 25 hours)
     healthcheck:
-      test: ["CMD", "sh", "-c", "find /outputs/tariffs.json -mmin -1500 | grep -q ."]
+      test: ["CMD", "sh", "-c", "find /outputs/site/index.html -mmin -1500 | grep -q ."]
       interval: 1h
       timeout: 10s
       retries: 3
@@ -74,14 +83,23 @@ services:
       - ENTSOE=${ENTSOE}
 
       # Optional: Configuration
-      - ZONE=${ZONE:-NL}
+      - ZONES=${ZONES:-ALL}
       - PRICE_PROVIDER=${TARIFF_PRICE_PROVIDER:-wholesale}
-      - OUTPUT_FILE=/outputs/tariffs.json
+      - OUTPUT_DIR=/outputs
       - SITE_OUTPUT_DIR=/outputs/site
       - XDG_CACHE_HOME=/cache
 
       # Optional: Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+      # Optional: Self-hosted Open-Meteo (see --profile open-meteo)
+      # Both deterministic (ifs025) and ensemble (ifs025_ensemble) data can be
+      # self-hosted. Set OPENMETEO_FORECAST_API and/or OPENMETEO_ENSEMBLE_API
+      # to route queries to the local container. OPENMETEO_BASE_URL overrides
+      # all three endpoints at once (forecast, ensemble, and historical archive).
+      - OPENMETEO_BASE_URL=${OPENMETEO_BASE_URL:-}
+      - OPENMETEO_FORECAST_API=${OPENMETEO_FORECAST_API:-}
+      - OPENMETEO_ENSEMBLE_API=${OPENMETEO_ENSEMBLE_API:-}
 
     # Pass through the Intel GPU (DRI render node) for XPU acceleration.
     # The render group GID must match the host — find it with:
@@ -101,9 +119,9 @@ services:
       # Output directory for tariff JSON file
       - ${TARIFF_OUTPUT_DIR:-./outputs}:/outputs
 
-    # Health check - verify the tariff file was updated recently (within 25 hours)
+    # Health check - verify the site was updated recently (within 25 hours)
     healthcheck:
-      test: ["CMD", "sh", "-c", "find /outputs/tariffs.json -mmin -1500 | grep -q ."]
+      test: ["CMD", "sh", "-c", "find /outputs/site/index.html -mmin -1500 | grep -q ."]
       interval: 1h
       timeout: 10s
       retries: 3
@@ -128,6 +146,68 @@ services:
       timeout: 5s
       retries: 3
 
+  # Local development — exposes nginx on http://localhost:7071.
+  # Start with:  docker compose --profile local up -d
+  runeflow-server-local:
+    image: nginx:alpine
+    container_name: runeflow-server-local
+    restart: unless-stopped
+    profiles:
+      - local
+    ports:
+      - "7071:8080"
+    volumes:
+      - ${TARIFF_OUTPUT_DIR:-./outputs}/site:/usr/share/nginx/html:ro
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - runeflow-export
+
+  # Archive cache warmer — downloads the full historical weather archive for
+  # all configured zones before the export container starts its first run.
+  #
+  # Each year is split into quarterly chunks stored with NEVER_EXPIRE HTTP
+  # caching, so interrupted runs resume exactly where they left off.
+  # Once all zones are cached the container sleeps 24 h and rechecks, catching
+  # any new zones or extended historical ranges without a restart.
+  #
+  # No ENTSOE key required — only Open-Meteo (archive weather) is used.
+  #
+  # Start with:  docker compose --profile archive up -d
+  # Logs:        docker compose logs -f runeflow-archive
+  runeflow-archive:
+    image: ${RUNEFLOW_IMAGE:-ghcr.io/sikerdebaard/runeflow:latest}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.export
+    container_name: runeflow-archive
+    restart: unless-stopped
+    profiles:
+      - archive
+    entrypoint: ["/entrypoint-archive.sh"]
+    ports:
+      - "7072:7072"
+
+    environment:
+      - ZONES=${ZONES:-ALL}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - XDG_CACHE_HOME=/cache
+
+      # Tunable retry delays (seconds).  Override in .env for faster testing.
+      # SLEEP_ON_FAILURE=3600   (default — 1 h rate-limit recovery)
+      # SLEEP_ON_SUCCESS=86400  (default — 24 h daily recheck)
+      - SLEEP_ON_FAILURE=${SLEEP_ON_FAILURE:-3600}
+      - SLEEP_ON_SUCCESS=${SLEEP_ON_SUCCESS:-86400}
+
+      # Optional: self-hosted Open-Meteo (mirrors runeflow-export settings)
+      - OPENMETEO_BASE_URL=${OPENMETEO_BASE_URL:-}
+      - OPENMETEO_FORECAST_API=${OPENMETEO_FORECAST_API:-}
+      - OPENMETEO_ENSEMBLE_API=${OPENMETEO_ENSEMBLE_API:-}
+
+    volumes:
+      # Share the same cache volume with the export container so that
+      # downloaded archive data is immediately available to it.
+      - runeflow-cache:/cache
+
   # Cloudflare Tunnel — outbound-only public HTTPS exposure (Zero Trust).
   # Requires CLOUDFLARE_TUNNEL_TOKEN in your .env file.
   # One-time setup: create a tunnel in Zero Trust → Networks → Tunnels,
@@ -145,6 +225,56 @@ services:
     profiles:
       - tunnel
 
+  # Self-hosted Open-Meteo server.
+  #
+  # Downloads ECMWF weather model data directly from ECMWF open-data servers
+  # (data.ecmwf.int) — no API key required. Both deterministic (ifs025) and
+  # probabilistic ensemble (ifs025_ensemble) models are supported.
+  #
+  # Endpoints served:
+  #   /v1/forecast  — deterministic IFS 0.25° forecast (ifs025, ~500 MB)
+  #   /v1/ensemble  — probabilistic IFS 0.25° 50-member ensemble (ifs025_ensemble, ~5–15 GB)
+  #
+  # Usage:
+  #   1. Start:  docker compose --profile open-meteo up -d
+  #   2. The entrypoint automatically downloads all configured domains and
+  #      keeps them refreshed every 6 hours (matches ECMWF run schedule).
+  #   3. Add to .env:
+  #        OPENMETEO_FORECAST_API=http://open-meteo:8080/v1/forecast
+  #        OPENMETEO_ENSEMBLE_API=http://open-meteo:8080/v1/ensemble
+  #
+  # The first run will take several minutes (especially ensemble data).
+  # Data persists in the open-meteo-data volume between restarts.
+  # WARNING: docker compose down -v will delete all downloaded data.
+  #
+  # Tune downloads via environment variables:
+  #   OPEN_METEO_SYNC_DOMAINS   comma-separated domains (default: ifs025,ifs025_ensemble)
+  #   OPEN_METEO_SYNC_INTERVAL  refresh interval in seconds (default: 21600)
+  #   OPEN_METEO_CONCURRENT     download workers (default: 4)
+  open-meteo:
+    image: ghcr.io/open-meteo/open-meteo:latest
+    container_name: open-meteo
+    restart: unless-stopped
+    profiles:
+      - open-meteo
+    entrypoint: ["/entrypoint-open-meteo.sh"]
+    environment:
+      - OPEN_METEO_SYNC_DOMAINS=${OPEN_METEO_SYNC_DOMAINS:-ifs025,ifs025_ensemble}
+      - OPEN_METEO_SYNC_INTERVAL=${OPEN_METEO_SYNC_INTERVAL:-21600}
+      - OPEN_METEO_CONCURRENT=${OPEN_METEO_CONCURRENT:-4}
+    volumes:
+      # Persist downloaded weather model data between container restarts.
+      # WARNING: docker compose down -v will delete this data.
+      - open-meteo-data:/app/data
+      - ./docker/entrypoint-open-meteo.sh:/entrypoint-open-meteo.sh:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/v1/forecast?latitude=52&longitude=4&hourly=temperature_2m&forecast_days=1"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 15m
+
 volumes:
   runeflow-cache:
   runeflow-logs:
+  open-meteo-data:

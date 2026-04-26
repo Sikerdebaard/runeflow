@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ zone_name }} — Performance{% endblock %}
+{% block meta_description %}Model performance metrics for {{ zone_name }} ({{ zone_code }}): retrospective forecast accuracy, training history and ensemble calibration.{% endblock %}
+{% block canonical_path %}/{{ zone_code }}/performance/{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="/">Home</a> &rsaquo;
+  <a href="/{{ zone_code }}/">{{ zone_name }}</a> &rsaquo;
+  Performance
+</nav>
+
+<section class="page-hero">
+  <h1>{{ zone_name }} <span class="zone-badge">{{ zone_code }}</span> — Model Performance</h1>
+  <p>Retrospective accuracy of archived forecasts compared against actual ENTSO-E day-ahead prices.</p>
+</section>
+
+{% if performance %}
+<section class="perf-section perf-summary-grid">
+  <div class="perf-stat">
+    <div class="perf-stat-value">{% if performance.overall_mae is not none %}{{ "%.2f"|format(performance.overall_mae) }}{% else %}&mdash;{% endif %}</div>
+    <div class="perf-stat-label">MAE (EUR/MWh)</div>
+  </div>
+  <div class="perf-stat">
+    <div class="perf-stat-value">{% if performance.overall_rmse is not none %}{{ "%.2f"|format(performance.overall_rmse) }}{% else %}&mdash;{% endif %}</div>
+    <div class="perf-stat-label">RMSE (EUR/MWh)</div>
+  </div>
+  <div class="perf-stat">
+    <div class="perf-stat-value">{% if performance.ensemble_coverage_pct is not none %}{{ "%.1f"|format(performance.ensemble_coverage_pct) }}%{% else %}&mdash;{% endif %}</div>
+    <div class="perf-stat-label">P25–P75 Coverage</div>
+  </div>
+  <div class="perf-stat">
+    <div class="perf-stat-value">{{ performance.n_archived_forecasts }}</div>
+    <div class="perf-stat-label">Archived Forecasts</div>
+  </div>
+  <div class="perf-stat">
+    <div class="perf-stat-value">{{ performance.n_comparable_hours }}</div>
+    <div class="perf-stat-label">Comparable Hours</div>
+  </div>
+</section>
+
+{% if performance.horizon_metrics %}
+<section class="perf-section">
+  <h2>Accuracy by Forecast Horizon</h2>
+  <div class="chart-container" style="height:300px">
+    <canvas id="horizon-bar-chart"></canvas>
+  </div>
+  <table class="perf-table perf-table-small">
+    <thead>
+      <tr><th>Horizon</th><th>Hours</th><th>MAE (EUR/MWh)</th><th>RMSE (EUR/MWh)</th></tr>
+    </thead>
+    <tbody>
+      {% for h in performance.horizon_metrics %}
+      <tr>
+        <td>{{ h.label }}</td>
+        <td>{{ h.n_hours }}</td>
+        <td>{{ "%.2f"|format(h.mae) }}</td>
+        <td>{{ "%.2f"|format(h.rmse) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if performance.training_history %}
+<section class="perf-section">
+  <h2>Training History</h2>
+  <div class="chart-container" style="height:300px">
+    <canvas id="training-history-chart"></canvas>
+  </div>
+  <table class="perf-table perf-table-small">
+    <thead>
+      <tr><th>Model Version</th><th>MAE</th><th>R²</th><th>Coverage %</th><th>Trained At</th></tr>
+    </thead>
+    <tbody>
+      {% for row in performance.training_history | reverse %}
+      <tr>
+        <td><code>{{ row.model_version }}</code></td>
+        <td>{% if row.mae is not none %}{{ "%.4f"|format(row.mae) }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if row.r2 is not none %}{{ "%.4f"|format(row.r2) }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if row.coverage is not none %}{{ "%.1f"|format(row.coverage) }}{% else %}&mdash;{% endif %}</td>
+        <td>{{ row.trained_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if performance.forecast_accuracies %}
+<section class="perf-section">
+  <h2>Per-Forecast Accuracy (last 30 days)</h2>
+  <div class="chart-container" style="height:300px">
+    <canvas id="accuracy-timeline-chart"></canvas>
+  </div>
+  <table class="perf-table perf-table-small">
+    <thead>
+      <tr>
+        <th>Forecast Created</th>
+        <th>Model Version</th>
+        <th>Hours</th>
+        <th>MAE</th>
+        <th>RMSE</th>
+        <th>MAPE %</th>
+        <th>Direction %</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in performance.forecast_accuracies | reverse %}
+      <tr>
+        <td>{{ a.created_at }}</td>
+        <td><code>{{ a.model_version }}</code></td>
+        <td>{{ a.n_hours }}</td>
+        <td>{% if a.mae is not none %}{{ "%.2f"|format(a.mae) }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if a.rmse is not none %}{{ "%.2f"|format(a.rmse) }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if a.mape is not none %}{{ "%.1f"|format(a.mape) }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if a.directional_accuracy is not none %}{{ "%.1f"|format(a.directional_accuracy * 100) }}{% else %}&mdash;{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% else %}
+<section class="perf-section">
+  <p class="empty">No performance data available yet. Metrics accumulate once archived forecasts can be compared against actual prices (typically after 24–48&nbsp;hours of operation).</p>
+</section>
+{% endif %}
+
+<p class="muted small"><a href="/{{ zone_code }}/">&larr; Back to {{ zone_name }}</a> &ensp; <a href="/performance/">All zones &rarr;</a></p>
+
+<script type="application/json" id="__perf_json">{{ performance_json | safe }}</script>
+{% endblock %}
+
+{% block extra_scripts %}<script src="/assets/performance-charts.js"></script>{% endblock %}

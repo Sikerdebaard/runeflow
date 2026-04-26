@@ -32,6 +32,7 @@ import logging
 from runeflow.adapters.weather.openmeteo import (
     DEFAULT_HOURLY_VARS,
     ENSEMBLE_VARS,
+    N_MIXED_ENSEMBLE_MEMBERS,
 )
 from runeflow.adapters.weather.strategies import (
     CachingStrategy,
@@ -41,7 +42,7 @@ from runeflow.domain.weather import WeatherLocation, WeatherSeries
 from runeflow.ports.store import DataStore
 from runeflow.ports.weather import WeatherPort
 
-_DEFAULT_N_ENSEMBLE_MEMBERS = 51
+_DEFAULT_N_ENSEMBLE_MEMBERS = N_MIXED_ENSEMBLE_MEMBERS
 
 logger = logging.getLogger(__name__)
 

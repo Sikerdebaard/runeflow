@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>runeflow — archive cache status</title>
+  <style>
+    :root {
+      --bg:      #0f1117;
+      --card:    #1a1d27;
+      --border:  #2a2d3e;
+      --accent:  #4f9cf9;
+      --green:   #4caf50;
+      --orange:  #ff9800;
+      --red:     #f44336;
+      --muted:   #555e77;
+      --text:    #c9d1e0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', ui-monospace, monospace;
+      background: var(--bg);
+      color: var(--text);
+      padding: 32px 20px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.35em; color: var(--accent); margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 0.85em; margin-bottom: 24px; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    /* ── Progress bar ─────────────────────────────────────────────── */
+    .bar-wrap { background: var(--border); border-radius: 6px; height: 14px; overflow: hidden; margin: 12px 0 4px; }
+    .bar-fill {
+      background: linear-gradient(90deg, #1d4ed8, var(--accent));
+      height: 100%;
+      border-radius: 6px;
+      transition: width 0.6s ease;
+      min-width: 0;
+    }
+
+    /* ── Stats row ────────────────────────────────────────────────── */
+    .stats { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 16px; }
+    .stat-val { font-size: 1.55em; font-weight: 600; line-height: 1.1; }
+    .stat-lbl { font-size: 0.76em; color: var(--muted); margin-top: 2px; }
+
+    /* ── In-progress banner ───────────────────────────────────────── */
+    .cur-zone { margin-top: 14px; color: var(--orange); font-size: 0.9em; }
+    @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.35 } }
+    .pulse { animation: pulse 1.3s ease-in-out infinite; display: inline-block; }
+
+    /* ── Zone table ───────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 0.87em; }
+    thead th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 500;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr:hover { background: rgba(255,255,255,0.025); }
+    td { padding: 5px 10px; border-bottom: 1px solid rgba(42,45,62,0.5); }
+    .s-downloaded  { color: var(--green); }
+    .s-skipped     { color: var(--muted); }
+    .s-failed      { color: var(--red); }
+    .s-in_progress { color: var(--orange); }
+    .s-pending     { color: #2e3352; }
+
+    /* ── Error banner ─────────────────────────────────────────────── */
+    #err {
+      display: none;
+      background: #1e1010;
+      border: 1px solid #5a1a1a;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      color: #ff8a80;
+      font-size: 0.88em;
+    }
+
+    /* ── Footer ───────────────────────────────────────────────────── */
+    .footer { text-align: center; color: var(--muted); font-size: 0.78em; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>runeflow / archive cache warmer</h1>
+  <p class="subtitle">Historical weather archive download progress</p>
+
+  <div id="err">⚠ Waiting for the first run to begin — status.json not yet available.</div>
+
+  <div class="card" id="summary">
+    <div style="color:var(--muted)">Loading…</div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Zone</th>
+          <th>Status</th>
+          <th style="text-align:right">Duration</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody id="zone-rows">
+        <tr><td colspan="4" style="color:var(--muted);padding:12px 10px">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="footer">Auto-refreshes every 15 s &nbsp;·&nbsp; <span id="ts">—</span></p>
+
+  <script>
+    const ICON  = { downloaded:'✓', skipped:'↩', failed:'✗', in_progress:'●', pending:'·', daily_limit:'⏸' };
+    const LABEL = { downloaded:'downloaded', skipped:'already cached', failed:'failed', in_progress:'in progress', pending:'pending', daily_limit:'daily limit — retry tomorrow' };
+
+    function dur(s) {
+      if (s == null) return '';
+      s = +s;
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+      if (h > 0) return h + 'h ' + m + 'm';
+      if (m > 0) return m + 'm ' + sec + 's';
+      return sec + 's';
+    }
+
+    function ts(iso) {
+      if (!iso) return '—';
+      try { return new Date(iso).toLocaleString(); } catch { return iso; }
+    }
+
+    async function refresh() {
+      let d;
+      try {
+        const r = await fetch('status.json?_=' + Date.now());
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        d = await r.json();
+        document.getElementById('err').style.display = 'none';
+      } catch {
+        document.getElementById('err').style.display = 'block';
+        document.getElementById('summary').innerHTML = '';
+        return;
+      }
+
+      const total = d.total || 0;
+      const done  = (d.downloaded || 0) + (d.skipped || 0);
+      const pct   = total > 0 ? Math.round(done / total * 100) : 0;
+      const passStr = d.pass > 1
+        ? ' <span style="color:var(--muted);font-size:0.8em;font-weight:400">(pass ' + d.pass + ')</span>'
+        : '';
+
+      document.getElementById('summary').innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">' +
+          '<b style="font-size:1.05em">Progress: ' + pct + '%' + passStr + '</b>' +
+          '<span style="color:var(--muted);font-size:0.81em">started ' + ts(d.started_at) + '</span>' +
+        '</div>' +
+        '<div class="bar-wrap"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+        '<div style="color:var(--muted);font-size:0.78em;text-align:right;">' + done + ' / ' + total + ' zones</div>' +
+        '<div class="stats">' +
+          '<div><div class="stat-val">' + total + '</div><div class="stat-lbl">total zones</div></div>' +
+          '<div><div class="stat-val" style="color:var(--green)">'  + (d.downloaded   || 0) + '</div><div class="stat-lbl">downloaded</div></div>' +
+          '<div><div class="stat-val" style="color:var(--muted)">'  + (d.skipped      || 0) + '</div><div class="stat-lbl">already cached</div></div>' +
+          '<div><div class="stat-val" style="color:var(--red)">'    + (d.failed_count || 0) + '</div><div class="stat-lbl">failed</div></div>' +
+          '<div><div class="stat-val">' + dur(d.elapsed_seconds) + '</div><div class="stat-lbl">elapsed</div></div>' +
+        '</div>' +
+        (d.in_progress
+          ? '<div class="cur-zone"><span class="pulse">●</span> Processing <b>' + d.in_progress + '</b>…</div>'
+          : (done === total && total > 0
+              ? '<div style="margin-top:14px;color:var(--green)">✓ All zones complete</div>'
+              : ''));
+
+      const zones = d.zones || {};
+      const rows = Object.entries(zones).map(([code, v]) => {
+        const st  = v.status || 'pending';
+        const ico = st === 'in_progress'
+          ? '<span class="pulse s-in_progress">●</span>'
+          : '<span class="s-' + st + '">' + (ICON[st] || '') + '</span>';
+        const lbl = '<span class="s-' + st + '">' + (LABEL[st] || st) + '</span>';
+        const err = v.error
+          ? '<span style="color:var(--red);font-size:0.88em">' + v.error.substring(0, 100) + '</span>'
+          : '';
+        return '<tr>' +
+          '<td style="font-weight:500">' + code + '</td>' +
+          '<td>' + ico + ' ' + lbl + '</td>' +
+          '<td style="text-align:right;color:var(--muted)">' + dur(v.duration_seconds) + '</td>' +
+          '<td>' + err + '</td>' +
+        '</tr>';
+      });
+
+      document.getElementById('zone-rows').innerHTML = rows.length
+        ? rows.join('')
+        : '<tr><td colspan="4" style="color:var(--muted);padding:12px 10px">No zone data yet</td></tr>';
+
+      document.getElementById('ts').textContent = 'last updated ' + new Date().toLocaleTimeString();
+    }
+
+    refresh();
+    setInterval(refresh, 15000);
+  </script>
+</body>
+</html>

@@ -30,6 +30,12 @@ class RateLimitError(AdapterError):
     """API rate limit exceeded."""
 
 
+class DailyRateLimitError(RateLimitError):
+    """Open-Meteo daily API request quota exhausted — retry tomorrow."""
+
+    is_daily = True
+
+
 class AuthenticationError(AdapterError):
     """API key missing or invalid."""
 

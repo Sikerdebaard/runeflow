@@ -37,9 +37,17 @@ class ZoneRegistry:
 
     @classmethod
     def list_zones(cls) -> list[str]:
-        """Return sorted list of registered zone codes."""
+        """Return sorted list of active (non-disabled) zone codes."""
         _ensure_default_zones_registered()
-        return sorted(cls._zones.keys())
+        return sorted(z for z, c in cls._zones.items() if c.disabled_reason is None)
+
+    @classmethod
+    def list_disabled_zones(cls) -> list[tuple[str, str]]:
+        """Return sorted list of (zone_code, reason) for disabled zones."""
+        _ensure_default_zones_registered()
+        return sorted(
+            (z, c.disabled_reason) for z, c in cls._zones.items() if c.disabled_reason is not None
+        )
 
     @classmethod
     def clear(cls) -> None:

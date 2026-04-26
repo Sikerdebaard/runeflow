@@ -353,3 +353,343 @@ class TestZoneRegistryClear:
         # Restore so other tests are not affected
         ZoneRegistry._zones.update(existing)
         assert "NL" in ZoneRegistry._zones
+
+
+# ---------------------------------------------------------------------------
+# All ENTSO-E zones — shared parametrized suite
+# ---------------------------------------------------------------------------
+
+ALL_ZONE_CODES = [
+    # Core
+    "NL",
+    "DE_LU",
+    # Western / Central Europe
+    "FR",
+    "BE",
+    "AT",
+    "CH",
+    # Iberia
+    "ES",
+    "PT",
+    # Italy (regional bidding zones)
+    "IT_NORD",
+    "IT_CNOR",
+    "IT_CSUD",
+    "IT_SUD",
+    "IT_SICI",
+    "IT_SARD",
+    # Central-Eastern Europe
+    "PL",
+    "CZ",
+    "SK",
+    "HU",
+    "RO",
+    "BG",
+    "GR",
+    # South-Eastern Europe
+    "SI",
+    "HR",
+    "RS",
+    "BA",
+    "ME",
+    "MK",
+    "XK",
+    # Nordic
+    "DK_1",
+    "DK_2",
+    "FI",
+    "NO_1",
+    "NO_2",
+    "NO_3",
+    "NO_4",
+    "NO_5",
+    "SE_1",
+    "SE_2",
+    "SE_3",
+    "SE_4",
+    # Baltic states
+    "EE",
+    "LV",
+    "LT",
+    # British Isles
+    "GB",
+    "IE",
+    # Island / isolated systems
+    "MT",
+    "CY",
+]
+
+# Zones that have no accessible price data source and are intentionally disabled.
+# They remain registered (ZoneRegistry.get() works) but are excluded from list_zones().
+DISABLED_ZONE_CODES = ["BA", "CY", "GB", "IE", "MT", "XK"]
+ACTIVE_ZONE_CODES = [z for z in ALL_ZONE_CODES if z not in DISABLED_ZONE_CODES]
+
+
+class TestZoneRegistryAllZones:
+    def test_all_zone_codes_registered(self):
+        zones = ZoneRegistry.list_zones()
+        missing = [z for z in ACTIVE_ZONE_CODES if z not in zones]
+        assert missing == [], f"Zones not registered: {missing}"
+
+    def test_list_zones_contains_all(self):
+        zones = set(ZoneRegistry.list_zones())
+        assert set(ACTIVE_ZONE_CODES) == zones
+
+    def test_list_zones_sorted(self):
+        zones = ZoneRegistry.list_zones()
+        assert zones == sorted(zones)
+
+    def test_disabled_zones_not_in_list_zones(self):
+        zones = set(ZoneRegistry.list_zones())
+        for code in DISABLED_ZONE_CODES:
+            assert code not in zones, f"{code} should not appear in list_zones()"
+
+
+class TestDisabledZones:
+    def test_disabled_zones_still_gettable(self):
+        """Disabled zones are still registered and accessible via get()."""
+        for code in DISABLED_ZONE_CODES:
+            cfg = ZoneRegistry.get(code)
+            assert cfg.zone == code
+
+    def test_disabled_zones_have_reason(self):
+        for code in DISABLED_ZONE_CODES:
+            cfg = ZoneRegistry.get(code)
+            assert cfg.disabled_reason is not None
+            assert len(cfg.disabled_reason) > 10
+
+    def test_list_disabled_zones_returns_all(self):
+        disabled = dict(ZoneRegistry.list_disabled_zones())
+        for code in DISABLED_ZONE_CODES:
+            assert code in disabled
+            assert disabled[code] is not None
+
+    def test_list_disabled_zones_sorted(self):
+        disabled = ZoneRegistry.list_disabled_zones()
+        codes = [z for z, _ in disabled]
+        assert codes == sorted(codes)
+
+    def test_active_zones_have_no_disabled_reason(self):
+        for code in ACTIVE_ZONE_CODES:
+            cfg = ZoneRegistry.get(code)
+            assert cfg.disabled_reason is None, f"{code} unexpectedly has disabled_reason"
+
+
+@pytest.mark.parametrize("zone_code", ALL_ZONE_CODES)
+class TestAllZonesCommon:
+    """Mandatory invariants that every zone config must satisfy."""
+
+    def test_zone_code_matches(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.zone == zone_code
+
+    def test_solar_capacity_positive(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.installed_solar_capacity_mw > 0
+
+    def test_wind_capacity_non_negative(self, zone_code):
+        """Wind capacity must be non-negative; island zones (MT, CY) may have zero."""
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.installed_wind_capacity_mw >= 0
+
+    def test_typical_load_positive(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.typical_load_mw > 0
+
+    def test_feature_groups_contain_temporal(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert "temporal" in cfg.feature_groups
+
+    def test_feature_groups_all_valid(self, zone_code):
+        from runeflow.features.registry import FEATURE_REGISTRY
+
+        cfg = ZoneRegistry.get(zone_code)
+        unknown = [g for g in cfg.feature_groups if g not in FEATURE_REGISTRY]
+        assert unknown == [], f"{zone_code}: unknown feature groups {unknown}"
+
+    def test_models_include_xgboost_quantile(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert "xgboost_quantile" in cfg.models
+
+    def test_ensemble_strategy(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.ensemble_strategy == "condition_gated"
+
+    def test_has_energyzero_only_nl(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.has_energyzero == (zone_code == "NL")
+
+    def test_has_ned_only_nl(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.has_ned == (zone_code == "NL")
+
+    def test_tariff_formulas_non_empty(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert len(cfg.tariff_formulas) > 0
+
+    def test_tariff_formulas_contains_wholesale(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert "wholesale" in cfg.tariff_formulas
+
+    def test_weather_locations_present(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert len(cfg.weather_locations) >= 1
+
+    def test_primary_weather_location_in_europe(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        loc = cfg.primary_weather_location
+        # All ENTSO-E zones lie between 27°N–72°N and 25°W–45°E
+        assert 27 < loc.lat < 72, f"{zone_code}: lat={loc.lat} outside Europe"
+        assert -25 < loc.lon < 45, f"{zone_code}: lon={loc.lon} outside Europe"
+
+    def test_historical_years_at_least_three(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert len(cfg.historical_years) >= 3
+
+    def test_min_training_years_positive(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.min_training_years >= 1
+
+
+# ---------------------------------------------------------------------------
+# Notable-zone specifics
+# ---------------------------------------------------------------------------
+
+
+class TestFRZoneConfig:
+    @pytest.fixture(autouse=True)
+    def cfg(self):
+        self.cfg = ZoneRegistry.get("FR")
+
+    def test_name(self):
+        assert "France" in self.cfg.name
+
+    def test_timezone(self):
+        assert self.cfg.timezone == "Europe/Paris"
+
+    def test_large_nuclear_reflected_in_load(self):
+        """France has the largest nuclear fleet in the EU — very high typical load."""
+        assert self.cfg.typical_load_mw > 50_000
+
+    def test_has_cross_border_feature(self):
+        assert "cross_border" in self.cfg.feature_groups
+
+    def test_neighbors_non_empty(self):
+        assert len(self.cfg.neighbors) > 0
+
+
+class TestESZoneConfig:
+    @pytest.fixture(autouse=True)
+    def cfg(self):
+        self.cfg = ZoneRegistry.get("ES")
+
+    def test_name(self):
+        assert "Spain" in self.cfg.name or "ES" in self.cfg.zone
+
+    def test_timezone(self):
+        assert self.cfg.timezone == "Europe/Madrid"
+
+    def test_large_solar_capacity(self):
+        """Spain has substantial solar capacity (20+ GW as of 2024)."""
+        assert self.cfg.installed_solar_capacity_mw > 15_000
+
+    def test_solar_feature(self):
+        assert "solar_power" in self.cfg.feature_groups
+
+
+class TestGBZoneConfig:
+    @pytest.fixture(autouse=True)
+    def cfg(self):
+        self.cfg = ZoneRegistry.get("GB")
+
+    def test_name(self):
+        assert "Britain" in self.cfg.name or "GB" in self.cfg.zone
+
+    def test_timezone(self):
+        assert self.cfg.timezone == "Europe/London"
+
+    def test_large_offshore_wind(self):
+        """GB leads Europe in offshore wind — >20 GW."""
+        assert self.cfg.installed_wind_capacity_mw > 20_000
+
+    def test_wind_feature(self):
+        assert "wind" in self.cfg.feature_groups
+
+
+class TestNordicHydroZones:
+    """Norway and Sweden have hydro-dominated markets — precipitation matters."""
+
+    @pytest.mark.parametrize("zone_code", ["NO_1", "NO_2", "NO_3", "NO_4", "NO_5"])
+    def test_precipitation_feature_norway(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert "precipitation" in cfg.feature_groups, (
+            f"{zone_code} should have 'precipitation' (hydro-dominated)"
+        )
+
+    @pytest.mark.parametrize("zone_code", ["SE_1", "SE_2", "SE_3", "SE_4"])
+    def test_precipitation_feature_sweden(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert "precipitation" in cfg.feature_groups, (
+            f"{zone_code} should have 'precipitation' (significant hydro)"
+        )
+
+    def test_no_1_timezone(self):
+        cfg = ZoneRegistry.get("NO_1")
+        assert cfg.timezone == "Europe/Oslo"
+
+
+class TestItalianZones:
+    """Italy has regional bidding zones — all should be independently registered."""
+
+    IT_ZONES = ["IT_NORD", "IT_CNOR", "IT_CSUD", "IT_SUD", "IT_SICI", "IT_SARD"]
+
+    def test_all_it_zones_registered(self):
+        zones = ZoneRegistry.list_zones()
+        for code in self.IT_ZONES:
+            assert code in zones
+
+    @pytest.mark.parametrize("zone_code", IT_ZONES)
+    def test_timezone_is_rome(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert cfg.timezone == "Europe/Rome"
+
+    def test_nord_has_largest_capacity(self):
+        """IT_NORD (industrial north) should have the highest typical load."""
+        nord = ZoneRegistry.get("IT_NORD")
+        sud = ZoneRegistry.get("IT_SUD")
+        assert nord.typical_load_mw > sud.typical_load_mw
+
+
+class TestBalkanZones:
+    """Small, data-sparse Balkan zones should still satisfy all common invariants."""
+
+    @pytest.mark.parametrize("zone_code", ["RS", "BA", "ME", "MK", "XK"])
+    def test_tariff_is_wholesale(self, zone_code):
+        cfg = ZoneRegistry.get(zone_code)
+        assert "wholesale" in cfg.tariff_formulas
+        assert cfg.has_energyzero is False
+        assert cfg.has_ned is False
+
+
+class TestWholesaleTariffNewZones:
+    """Wholesale passthrough should work for every new zone's formula."""
+
+    @pytest.mark.parametrize("zone_code", [z for z in ALL_ZONE_CODES if z not in ("NL", "DE_LU")])
+    def test_wholesale_passthrough(self, zone_code):
+        import datetime as dt
+
+        cfg = ZoneRegistry.get(zone_code)
+        formula = cfg.tariff_formulas["wholesale"]
+        p = 0.085
+        result = formula.apply(p, dt.date(2025, 6, 1))
+        assert result == pytest.approx(p, abs=1e-9)
+
+    @pytest.mark.parametrize("zone_code", [z for z in ALL_ZONE_CODES if z not in ("NL", "DE_LU")])
+    def test_wholesale_negative_price_passthrough(self, zone_code):
+        """Negative prices (grid congestion) must pass through unchanged."""
+        import datetime as dt
+
+        cfg = ZoneRegistry.get(zone_code)
+        formula = cfg.tariff_formulas["wholesale"]
+        result = formula.apply(-0.05, dt.date(2025, 6, 1))
+        assert result == pytest.approx(-0.05, abs=1e-9)

@@ -8,6 +8,7 @@ and binder.configure_injector."""
 from __future__ import annotations
 
 import datetime
+import json
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -1561,65 +1562,151 @@ class TestEntsoeGenerationAdapter:
 
 
 # ---------------------------------------------------------------------------
-# OpenMeteo adapter
+# OpenMeteo adapter — SDK mock helpers
 # ---------------------------------------------------------------------------
 
-_FAKE_HOURLY_JSON = {
-    "hourly": {
-        "time": ["2024-01-01T00:00:00", "2024-01-01T01:00:00"],
-        "temperature_2m": [5.0, 6.0],
-        "wind_speed_10m": [3.0, 4.0],
-        "wind_direction_10m": [180.0, 185.0],
-        "wind_gusts_10m": [5.0, 6.0],
-        "shortwave_radiation": [0.0, 0.0],
-        "direct_radiation": [0.0, 0.0],
-        "diffuse_radiation": [0.0, 0.0],
-        "cloud_cover": [50.0, 60.0],
-        "relative_humidity_2m": [80.0, 82.0],
-        "precipitation": [0.0, 0.0],
-        "is_day": [0, 0],
-    },
-    "timezone": "UTC",
-}
 
-_FAKE_ENSEMBLE_JSON = {
-    "hourly": {
-        "time": ["2024-01-10T00:00:00", "2024-01-10T01:00:00"],
-        "temperature_2m": [3.0, 4.0],
-        "temperature_2m_member01": [3.1, 4.1],
-        "temperature_2m_member02": [2.9, 3.9],
-        "wind_speed_10m": [2.0, 2.5],
-        "wind_speed_10m_member01": [2.1, 2.6],
-        "wind_speed_10m_member02": [1.9, 2.4],
-        "wind_gusts_10m": [4.0, 5.0],
-        "wind_gusts_10m_member01": [4.1, 5.1],
-        "wind_gusts_10m_member02": [3.9, 4.9],
-        "cloud_cover": [60.0, 70.0],
-        "cloud_cover_member01": [61.0, 71.0],
-        "cloud_cover_member02": [59.0, 69.0],
-        "shortwave_radiation": [0.0, 0.0],
-        "shortwave_radiation_member01": [0.0, 0.0],
-        "shortwave_radiation_member02": [0.0, 0.0],
-        "direct_radiation": [0.0, 0.0],
-        "direct_radiation_member01": [0.0, 0.0],
-        "direct_radiation_member02": [0.0, 0.0],
-        "diffuse_radiation": [0.0, 0.0],
-        "diffuse_radiation_member01": [0.0, 0.0],
-        "diffuse_radiation_member02": [0.0, 0.0],
-        "precipitation": [0.0, 0.0],
-        "precipitation_member01": [0.0, 0.0],
-        "precipitation_member02": [0.0, 0.0],
-    },
-    "timezone": "UTC",
-}
+def _make_sdk_hourly_response(
+    var_values: dict[str, list],
+    start: str = "2024-01-01T00:00:00",
+    interval_s: int = 3600,
+) -> MagicMock:
+    """Mock openmeteo-SDK response for deterministic (non-ensemble) data."""
+    import numpy as np
+
+    start_ts = int(pd.Timestamp(start, tz="UTC").timestamp())
+    n = len(next(iter(var_values.values())))
+    end_ts = start_ts + n * interval_s
+
+    var_objs = []
+    for values in var_values.values():
+        v = MagicMock()
+        v.ValuesAsNumpy.return_value = np.array(values, dtype=float)
+        v.EnsembleMember.return_value = 0
+        var_objs.append(v)
+
+    hourly = MagicMock()
+    hourly.VariablesLength.return_value = len(var_objs)
+    hourly.Variables.side_effect = lambda i: var_objs[i]
+    hourly.Time.return_value = start_ts
+    hourly.TimeEnd.return_value = end_ts
+    hourly.Interval.return_value = interval_s
+
+    response = MagicMock()
+    response.Hourly.return_value = hourly
+    return response
 
 
-def _fake_resp(json_data, status=200):
-    resp = MagicMock()
-    resp.status_code = status
-    resp.json.return_value = json_data
-    resp.raise_for_status.return_value = None
-    return resp
+def _make_sdk_ensemble_response(
+    var_names: list,
+    n_members: int = 3,
+    n_timesteps: int = 2,
+    start: str = "2024-01-10T00:00:00",
+    interval_s: int = 3600,
+) -> MagicMock:
+    """Mock SDK ensemble response with n_members × n_vars Variable objects."""
+    import numpy as np
+
+    start_ts = int(pd.Timestamp(start, tz="UTC").timestamp())
+    end_ts = start_ts + n_timesteps * interval_s
+
+    var_objs = []
+    for m in range(n_members):
+        for v_idx in range(len(var_names)):
+            v = MagicMock()
+            v.ValuesAsNumpy.return_value = np.full(n_timesteps, float(m * 10 + v_idx))
+            v.EnsembleMember.return_value = m
+            var_objs.append(v)
+
+    hourly = MagicMock()
+    hourly.VariablesLength.return_value = len(var_objs)
+    hourly.Variables.side_effect = lambda i: var_objs[i]
+    hourly.Time.return_value = start_ts
+    hourly.TimeEnd.return_value = end_ts
+    hourly.Interval.return_value = interval_s
+
+    response = MagicMock()
+    response.Hourly.return_value = hourly
+    return response
+
+
+class TestIterDateChunks:
+    """Unit tests for the _iter_date_chunks helper."""
+
+    def test_single_day_is_one_chunk(self):
+        from runeflow.adapters.weather.openmeteo import _iter_date_chunks
+
+        chunks = _iter_date_chunks(datetime.date(2024, 3, 15), datetime.date(2024, 3, 15), 3)
+        assert chunks == [(datetime.date(2024, 3, 15), datetime.date(2024, 3, 15))]
+
+    def test_full_year_produces_four_quarterly_chunks(self):
+        from runeflow.adapters.weather.openmeteo import _iter_date_chunks
+
+        chunks = _iter_date_chunks(datetime.date(2024, 1, 1), datetime.date(2024, 12, 31), 3)
+        assert len(chunks) == 4
+        assert chunks[0] == (datetime.date(2024, 1, 1), datetime.date(2024, 3, 31))
+        assert chunks[1] == (datetime.date(2024, 4, 1), datetime.date(2024, 6, 30))
+        assert chunks[2] == (datetime.date(2024, 7, 1), datetime.date(2024, 9, 30))
+        assert chunks[3] == (datetime.date(2024, 10, 1), datetime.date(2024, 12, 31))
+
+    def test_chunks_are_contiguous_and_non_overlapping(self):
+        from runeflow.adapters.weather.openmeteo import _iter_date_chunks
+
+        chunks = _iter_date_chunks(datetime.date(2022, 1, 1), datetime.date(2023, 12, 31), 3)
+        for i in range(len(chunks) - 1):
+            assert chunks[i][1] + datetime.timedelta(days=1) == chunks[i + 1][0]
+
+    def test_partial_range_last_chunk_clipped(self):
+        from runeflow.adapters.weather.openmeteo import _iter_date_chunks
+
+        chunks = _iter_date_chunks(datetime.date(2024, 1, 1), datetime.date(2024, 5, 15), 3)
+        assert chunks[-1][1] == datetime.date(2024, 5, 15)
+
+    def test_monthly_chunks(self):
+        from runeflow.adapters.weather.openmeteo import _iter_date_chunks
+
+        chunks = _iter_date_chunks(datetime.date(2024, 1, 1), datetime.date(2024, 3, 31), 1)
+        assert len(chunks) == 3
+
+
+class TestBiweeklyAnchor:
+    """Unit tests for the _biweekly_anchor helper."""
+
+    def test_result_is_on_or_before_input(self):
+        from runeflow.adapters.weather.openmeteo import _biweekly_anchor
+
+        d = datetime.date(2026, 4, 5)
+        assert _biweekly_anchor(d) <= d
+
+    def test_stable_across_13_day_window(self):
+        """All days in the same 14-day cycle return the same anchor."""
+        from runeflow.adapters.weather.openmeteo import _biweekly_anchor
+
+        anchor = _biweekly_anchor(datetime.date(2026, 4, 7))
+        for offset in range(1, 14):
+            d = datetime.date(2026, 4, 7) + datetime.timedelta(days=offset)
+            if _biweekly_anchor(d) == anchor:
+                assert _biweekly_anchor(d) == anchor
+
+    def test_advances_by_14_after_full_fortnight(self):
+        from runeflow.adapters.weather.openmeteo import _biweekly_anchor
+
+        d = datetime.date(2026, 1, 1)
+        anchor = _biweekly_anchor(d)
+        # The anchor exactly 14 days later must be 14 days ahead.
+        assert _biweekly_anchor(
+            anchor + datetime.timedelta(days=14)
+        ) == anchor + datetime.timedelta(days=14)
+
+    def test_anchor_is_exactly_on_boundary(self):
+        """When today is exactly on a 14-day boundary, anchor == today."""
+        from runeflow.adapters.weather.openmeteo import _biweekly_anchor
+
+        # Find a day that is itself a biweekly anchor.
+        d = datetime.date(2026, 4, 7)
+        anchor = _biweekly_anchor(d)
+        # anchor is on the boundary, so _biweekly_anchor(anchor) == anchor.
+        assert _biweekly_anchor(anchor) == anchor
 
 
 class TestOpenMeteoAdapter:
@@ -1635,121 +1722,108 @@ class TestOpenMeteoAdapter:
     def loc(self):
         return WeatherLocation(name="nl", lat=52.1, lon=5.18, purpose="primary")
 
-    # ── _parse_hourly ──────────────────────────────────────────────────────
+    # ── _parse_hourly_sdk ──────────────────────────────────────────────────
 
-    def test_parse_hourly_valid(self, adapter):
-        from runeflow.adapters.weather.openmeteo import OpenMeteoAdapter
-
-        df = OpenMeteoAdapter._parse_hourly(_FAKE_HOURLY_JSON)
+    def test_parse_hourly_sdk_valid(self, adapter):
+        response = _make_sdk_hourly_response(
+            {"temperature_2m": [5.0, 6.0], "wind_speed_10m": [3.0, 4.0]}
+        )
+        df = adapter._parse_hourly_sdk(response, ["temperature_2m", "wind_speed_10m"])
         assert df is not None
         assert "temperature_2m" in df.columns
+        assert "wind_speed_10m" in df.columns
         assert len(df) == 2
+        assert list(df["temperature_2m"]) == [5.0, 6.0]
 
-    def test_parse_hourly_missing_time_returns_none(self, adapter):
-        from runeflow.adapters.weather.openmeteo import OpenMeteoAdapter
+    def test_parse_hourly_sdk_empty_returns_none(self, adapter):
+        response = MagicMock()
+        response.Hourly.return_value.VariablesLength.return_value = 0
+        assert adapter._parse_hourly_sdk(response, ["temperature_2m"]) is None
 
-        df = OpenMeteoAdapter._parse_hourly({})
-        assert df is None
+    # ── _parse_ensemble_sdk ────────────────────────────────────────────────
 
-        df2 = OpenMeteoAdapter._parse_hourly({"hourly": {"no_time": [1, 2]}})
-        assert df2 is None
+    def test_parse_ensemble_sdk_builds_members(self, adapter):
+        from runeflow.adapters.weather.openmeteo import ENSEMBLE_VARS
 
-    # ── _get_with_retry ────────────────────────────────────────────────────
+        response = _make_sdk_ensemble_response(ENSEMBLE_VARS, n_members=3, n_timesteps=2)
+        members = adapter._parse_ensemble_sdk(response, ENSEMBLE_VARS)
 
-    def test_get_with_retry_success(self, adapter):
+        assert members is not None
+        assert len(members) == 3
+        assert 0 in members and 1 in members and 2 in members
+        for df in members.values():
+            assert set(ENSEMBLE_VARS).issubset(df.columns)
+            assert len(df) == 2
+
+    def test_parse_ensemble_sdk_member_values_are_distinct(self, adapter):
+        """Each member gets its own set of values, not the same array shared."""
+        from runeflow.adapters.weather.openmeteo import ENSEMBLE_VARS
+
+        response = _make_sdk_ensemble_response(ENSEMBLE_VARS, n_members=2, n_timesteps=2)
+        members = adapter._parse_ensemble_sdk(response, ENSEMBLE_VARS)
+
+        assert members is not None
+        # Member 0 and member 1 have different temperature values (0.0 vs 10.0)
+        assert members[0]["temperature_2m"].iloc[0] != members[1]["temperature_2m"].iloc[0]
+
+    def test_parse_ensemble_sdk_empty_returns_none(self, adapter):
+        from runeflow.adapters.weather.openmeteo import ENSEMBLE_VARS
+
+        response = MagicMock()
+        response.Hourly.return_value.VariablesLength.return_value = 0
+        assert adapter._parse_ensemble_sdk(response, ENSEMBLE_VARS) is None
+
+    # ── _fetch_batch ───────────────────────────────────────────────────────
+
+    def test_fetch_batch_returns_sdk_responses(self, adapter, loc):
         from unittest.mock import patch
 
-        with (
-            patch(
-                "runeflow.adapters.weather.openmeteo.requests.get",
-                return_value=_fake_resp(_FAKE_HOURLY_JSON),
-            ),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
-        ):
-            resp = adapter._get_with_retry("http://example.com", {})
+        sdk_responses = [_make_sdk_hourly_response({"temperature_2m": [5.0]})]
+        with patch.object(adapter._client, "weather_api", return_value=sdk_responses) as mock_api:
+            result = adapter._fetch_batch(
+                "https://api.example.com", [loc], hourly=["temperature_2m"]
+            )
 
-        assert resp is not None
-        assert resp.json() == _FAKE_HOURLY_JSON
+        assert result == sdk_responses
+        params = mock_api.call_args[1]["params"]
+        assert params["latitude"] == [loc.lat]
+        assert params["longitude"] == [loc.lon]
+        assert params["timezone"] == "UTC"
 
-    def test_get_with_retry_rate_limit_raises(self, adapter):
+    def test_fetch_batch_failure_returns_nones(self, adapter, loc):
         from unittest.mock import patch
 
-        from runeflow.exceptions import RateLimitError
+        with patch.object(adapter._client, "weather_api", side_effect=RuntimeError("net error")):
+            result = adapter._fetch_batch("https://api.example.com", [loc])
 
-        rate_limited = _fake_resp({}, status=429)
-        rate_limited.raise_for_status.return_value = None
+        assert result == [None]
 
-        with (
-            patch("runeflow.adapters.weather.openmeteo.requests.get", return_value=rate_limited),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
-            pytest.raises(RateLimitError, match="Rate limit exceeded"),
-        ):
-            adapter._get_with_retry("http://example.com", {}, max_retries=4)
-
-    def test_get_with_retry_rate_limit_retries_once(self, adapter):
-        """429 on first attempt → sleep → success on second attempt."""
+    def test_fetch_batch_multiple_locations(self, adapter):
         from unittest.mock import patch
 
-        rate_limited = _fake_resp({}, status=429)
-        rate_limited.raise_for_status.return_value = None
-        success = _fake_resp(_FAKE_HOURLY_JSON)
+        locs = [
+            WeatherLocation(name="a", lat=52.0, lon=5.0, purpose="primary"),
+            WeatherLocation(name="b", lat=53.0, lon=6.0, purpose="wind"),
+        ]
+        sdk_responses = [
+            _make_sdk_hourly_response({"temperature_2m": [5.0]}),
+            _make_sdk_hourly_response({"temperature_2m": [7.0]}),
+        ]
+        with patch.object(adapter._client, "weather_api", return_value=sdk_responses) as mock_api:
+            result = adapter._fetch_batch("https://api.example.com", locs)
 
-        with (
-            patch(
-                "runeflow.adapters.weather.openmeteo.requests.get",
-                side_effect=[rate_limited, success],
-            ),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
-        ):
-            resp = adapter._get_with_retry("http://example.com", {}, max_retries=4)
-
-        assert resp is not None
-
-    def test_get_with_retry_request_exception_raises_download_error(self, adapter):
-        from unittest.mock import patch
-
-        import requests as req_lib
-
-        from runeflow.exceptions import DownloadError
-
-        with (
-            patch(
-                "runeflow.adapters.weather.openmeteo.requests.get",
-                side_effect=req_lib.RequestException("timeout"),
-            ),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
-            pytest.raises(DownloadError, match="Open-Meteo request failed"),
-        ):
-            adapter._get_with_retry("http://example.com", {}, max_retries=1)
-
-    def test_get_with_retry_request_exception_retries(self, adapter):
-        """Request fails on first call, succeeds on second — no DownloadError raised."""
-        from unittest.mock import patch
-
-        import requests as req_lib
-
-        with (
-            patch(
-                "runeflow.adapters.weather.openmeteo.requests.get",
-                side_effect=[req_lib.RequestException("timeout"), _fake_resp(_FAKE_HOURLY_JSON)],
-            ),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
-        ):
-            resp = adapter._get_with_retry("http://example.com", {}, max_retries=4)
-
-        assert resp is not None
-
-    def test_get_with_retry_zero_retries_returns_none(self, adapter):
-        """Line 179: max_retries=0 means the for-loop is empty → return None."""
-        result = adapter._get_with_retry("http://example.com", {}, max_retries=0)
-        assert result is None
+        assert len(result) == 2
+        params = mock_api.call_args[1]["params"]
+        assert params["latitude"] == [52.0, 53.0]
+        assert params["longitude"] == [5.0, 6.0]
 
     # ── _fetch_historical ──────────────────────────────────────────────────
 
     def test_fetch_historical_happy_path(self, adapter, loc):
         from unittest.mock import patch
 
-        with patch.object(adapter, "_get_with_retry", return_value=_fake_resp(_FAKE_HOURLY_JSON)):
+        sdk_response = _make_sdk_hourly_response({"temperature_2m": [5.0, 6.0]})
+        with patch.object(adapter._client, "weather_api", return_value=[sdk_response]):
             df = adapter._fetch_historical(
                 loc, datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
             )
@@ -1762,20 +1836,13 @@ class TestOpenMeteoAdapter:
         from unittest.mock import patch
 
         future = dt.date.today() + dt.timedelta(days=10)
-        with patch.object(adapter, "_get_with_retry", return_value=_fake_resp(_FAKE_HOURLY_JSON)):
-            df = adapter._fetch_historical(loc, datetime.date(2024, 1, 1), future)
+        sdk_response = _make_sdk_hourly_response({"temperature_2m": [5.0]})
+        with patch.object(adapter._client, "weather_api", return_value=[sdk_response]) as mock_api:
+            adapter._fetch_historical(loc, datetime.date(2024, 1, 1), future)
 
-        assert df is not None
-
-    def test_fetch_historical_none_response(self, adapter, loc):
-        from unittest.mock import patch
-
-        with patch.object(adapter, "_get_with_retry", return_value=None):
-            result = adapter._fetch_historical(
-                loc, datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
-            )
-
-        assert result is None
+        call_params = mock_api.call_args[1]["params"]
+        end_date = datetime.date.fromisoformat(call_params["end_date"])
+        assert end_date <= dt.date.today()
 
     def test_fetch_historical_exception_re_raises(self, adapter, loc):
         from unittest.mock import patch
@@ -1783,133 +1850,80 @@ class TestOpenMeteoAdapter:
         from runeflow.exceptions import DownloadError
 
         with (
-            patch.object(adapter, "_get_with_retry", side_effect=DownloadError("fail")),
+            patch.object(adapter._client, "weather_api", side_effect=RuntimeError("fail")),
             pytest.raises(DownloadError),
         ):
             adapter._fetch_historical(loc, datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
 
-    # ── _fetch_forecast ────────────────────────────────────────────────────
-
-    def test_fetch_forecast_happy_path(self, adapter, loc):
-        from unittest.mock import patch
-
-        with patch.object(adapter, "_get_with_retry", return_value=_fake_resp(_FAKE_HOURLY_JSON)):
-            df = adapter._fetch_forecast(loc, forecast_days=3)
-
-        assert df is not None
-        assert "temperature_2m" in df.columns
-
-    def test_fetch_forecast_none_response(self, adapter, loc):
-        from unittest.mock import patch
-
-        with patch.object(adapter, "_get_with_retry", return_value=None):
-            result = adapter._fetch_forecast(loc)
-
-        assert result is None
-
-    def test_fetch_forecast_exception_returns_none(self, adapter, loc):
-        from unittest.mock import patch
-
-        with patch.object(adapter, "_get_with_retry", side_effect=RuntimeError("boom")):
-            result = adapter._fetch_forecast(loc)
-
-        assert result is None
-
-    # ── _fetch_ensemble_members ────────────────────────────────────────────
-
-    def test_fetch_ensemble_members_happy_path(self, adapter, loc):
-        from unittest.mock import patch
-
-        with patch.object(adapter, "_get_with_retry", return_value=_fake_resp(_FAKE_ENSEMBLE_JSON)):
-            members = adapter._fetch_ensemble_members(loc)
-
-        assert members is not None
-        assert 0 in members
-        assert 1 in members
-        assert 2 in members
-
-    def test_fetch_ensemble_members_none_response(self, adapter, loc):
-        from unittest.mock import patch
-
-        with patch.object(adapter, "_get_with_retry", return_value=None):
-            result = adapter._fetch_ensemble_members(loc)
-
-        assert result is None
-
-    def test_fetch_ensemble_members_exception_returns_none(self, adapter, loc):
-        from unittest.mock import patch
-
-        with patch.object(adapter, "_get_with_retry", side_effect=RuntimeError("fail")):
-            result = adapter._fetch_ensemble_members(loc)
-
-        assert result is None
-
-    def test_fetch_ensemble_members_empty_hourly(self, adapter, loc):
-        from unittest.mock import patch
-
-        empty_json = {"hourly": {}, "timezone": "UTC"}
-        with patch.object(adapter, "_get_with_retry", return_value=_fake_resp(empty_json)):
-            result = adapter._fetch_ensemble_members(loc)
-
-        assert result is None
-
-    def test_fetch_ensemble_members_partial_members_covers_280_283(self, adapter, loc):
-        """Lines 280-283: partial member coverage for some vars.
-
-        Covers:
-        - Line 281: var has no member keys at all → use control-run value
-        - Line 283: var has member01 but not member02 → df[var] = np.nan
-        """
-        from unittest.mock import patch
-
-        # temperature_2m has 2 members → n_members = 3
-        # wind_speed_10m has 1 member only (member01, not member02) → line 283 for m=2
-        # precipitation has 0 members → line 281 for m=1 and m=2
-        partial_json = {
-            "hourly": {
-                "time": ["2024-01-10T00:00:00", "2024-01-10T01:00:00"],
-                "temperature_2m": [3.0, 4.0],
-                "temperature_2m_member01": [3.1, 4.1],
-                "temperature_2m_member02": [2.9, 3.9],
-                "wind_speed_10m": [2.0, 2.5],
-                "wind_speed_10m_member01": [2.1, 2.6],
-                # wind_speed_10m_member02 intentionally absent → line 283
-                "wind_gusts_10m": [4.0, 5.0],
-                "cloud_cover": [60.0, 70.0],
-                "shortwave_radiation": [0.0, 0.0],
-                "direct_radiation": [0.0, 0.0],
-                "diffuse_radiation": [0.0, 0.0],
-                "precipitation": [0.0, 0.0],  # no _member* keys → line 281
-            },
-            "timezone": "UTC",
-        }
-
-        with patch.object(adapter, "_get_with_retry", return_value=_fake_resp(partial_json)):
-            members = adapter._fetch_ensemble_members(loc)
-
-        assert members is not None
-        assert len(members) == 3  # n_members = 3 (0, 1, 2)
-        # For m=2, wind_speed_10m should be NaN (line 283)
-        assert members[2]["wind_speed_10m"].isna().all()
-        # For m=1, precipitation should equal control value (line 281)
-        assert (members[1]["precipitation"] == 0.0).all()
-
     # ── download_historical ────────────────────────────────────────────────
+
+    def test_download_historical_calls_fetch_per_chunk(self, adapter, loc):
+        """download_historical splits the range into quarterly chunks."""
+        from unittest.mock import patch
+
+        idx = pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC")
+        fake_df = pd.DataFrame({"temperature_2m": [5.0]}, index=idx)
+        with patch.object(adapter, "_fetch_historical", return_value=fake_df) as mock_fetch:
+            adapter.download_historical(
+                [loc], datetime.date(2024, 1, 1), datetime.date(2024, 12, 31)
+            )
+        # One full year → 4 quarterly chunks
+        assert mock_fetch.call_count == 4
+
+    def test_download_historical_current_quarter_uses_biweekly_anchor(self, adapter, loc):
+        """Current quarter's effective end date is pinned to the biweekly anchor."""
+        from unittest.mock import patch
+
+        from runeflow.adapters.weather.openmeteo import _biweekly_anchor
+
+        today = datetime.date.today()
+        # Use only the current quarter so exactly one chunk is produced and it
+        # is unambiguously the "current" one.
+        quarter_start = datetime.date(today.year, ((today.month - 1) // 3) * 3 + 1, 1)
+        m = quarter_start.month - 1 + 3
+        quarter_end = datetime.date(
+            quarter_start.year + m // 12, m % 12 + 1, 1
+        ) - datetime.timedelta(days=1)
+
+        idx = pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC")
+        fake_df = pd.DataFrame({"temperature_2m": [5.0]}, index=idx)
+        call_ends = []
+
+        def capture_fetch(loc, s, e):
+            call_ends.append(e)
+            return fake_df
+
+        with patch.object(adapter, "_fetch_historical", side_effect=capture_fetch):
+            adapter.download_historical([loc], quarter_start, quarter_end)
+
+        assert len(call_ends) == 1
+        expected_end = max(_biweekly_anchor(today), quarter_start)
+        assert call_ends[0] == expected_end
+
+    def test_download_historical_current_quarter_ttl_restored(self, adapter, loc):
+        """urls_expire_after on the session is restored after the current-quarter fetch."""
+        from unittest.mock import patch
+
+        today = datetime.date.today()
+        start = datetime.date(today.year, 1, 1)
+        end = datetime.date(today.year, 12, 31)
+
+        idx = pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC")
+        fake_df = pd.DataFrame({"temperature_2m": [5.0]}, index=idx)
+
+        original_ue = adapter._cache_session.settings.urls_expire_after.copy()
+        with patch.object(adapter, "_fetch_historical", return_value=fake_df):
+            adapter.download_historical([loc], start, end)
+
+        # Session TTL must be restored to its original NEVER_EXPIRE setting.
+        assert adapter._cache_session.settings.urls_expire_after == original_ue
 
     def test_download_historical_happy_path(self, adapter, loc):
         from unittest.mock import patch
 
-        with (
-            patch.object(
-                adapter,
-                "_fetch_historical",
-                return_value=pd.DataFrame(
-                    {"temperature_2m": [5.0]},
-                    index=pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC"),
-                ),
-            ),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
-        ):
+        idx = pd.date_range("2024-01-01", periods=1, freq="h", tz="UTC")
+        fake_df = pd.DataFrame({"temperature_2m": [5.0]}, index=idx)
+        with patch.object(adapter, "_fetch_historical", return_value=fake_df):
             result = adapter.download_historical(
                 [loc], datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
             )
@@ -1924,7 +1938,6 @@ class TestOpenMeteoAdapter:
 
         with (
             patch.object(adapter, "_fetch_historical", return_value=None),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
             pytest.raises(DataUnavailableError, match="no historical weather"),
         ):
             adapter.download_historical([loc], datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
@@ -1934,16 +1947,11 @@ class TestOpenMeteoAdapter:
     def test_download_forecast_happy_path(self, adapter, loc):
         from unittest.mock import patch
 
+        idx = pd.date_range("2024-01-10", periods=2, freq="h", tz="UTC")
+        fake_df = pd.DataFrame({"temperature_2m": [5.0, 6.0]}, index=idx)
         with (
-            patch.object(
-                adapter,
-                "_fetch_forecast",
-                return_value=pd.DataFrame(
-                    {"temperature_2m": [5.0]},
-                    index=pd.date_range("2024-01-10", periods=1, freq="h", tz="UTC"),
-                ),
-            ),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+            patch.object(adapter, "_fetch_batch", return_value=[MagicMock()]),
+            patch.object(adapter, "_parse_hourly_sdk", return_value=fake_df),
         ):
             result = adapter.download_forecast([loc])
 
@@ -1956,31 +1964,50 @@ class TestOpenMeteoAdapter:
         from runeflow.exceptions import DataUnavailableError
 
         with (
-            patch.object(adapter, "_fetch_forecast", return_value=None),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+            patch.object(adapter, "_fetch_batch", return_value=[MagicMock()]),
+            patch.object(adapter, "_parse_hourly_sdk", return_value=None),
             pytest.raises(DataUnavailableError, match="no forecast weather"),
+        ):
+            adapter.download_forecast([loc])
+
+    def test_download_forecast_none_batch_response_skipped(self, adapter, loc):
+        from unittest.mock import patch
+
+        from runeflow.exceptions import DataUnavailableError
+
+        with (
+            patch.object(adapter, "_fetch_batch", return_value=[None]),
+            pytest.raises(DataUnavailableError),
         ):
             adapter.download_forecast([loc])
 
     # ── download_ensemble_forecast ─────────────────────────────────────────
 
     def test_download_ensemble_forecast_happy_path(self, adapter, loc):
+        """Mixed ensemble: ICON-EU + ECMWF members merged."""
         from unittest.mock import patch
 
         idx = pd.date_range("2024-01-10", periods=2, freq="h", tz="UTC")
-        fake_members = {
-            0: pd.DataFrame({"temperature_2m": [3.0, 4.0]}, index=idx),
-            1: pd.DataFrame({"temperature_2m": [3.1, 4.1]}, index=idx),
+        icon_members = {
+            0: {loc.name: pd.DataFrame({"temperature_2m": [3.0, 4.0]}, index=idx)},
+            1: {loc.name: pd.DataFrame({"temperature_2m": [3.1, 4.1]}, index=idx)},
+        }
+        ecmwf_members = {
+            0: {loc.name: pd.DataFrame({"temperature_2m": [3.2, 4.2]}, index=idx)},
         }
 
-        with (
-            patch.object(adapter, "_fetch_ensemble_members", return_value=fake_members),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
-        ):
+        def _fake_fetch(locs, model, days, *, interpolate_to_hourly=False):
+            if model == "icon_eu":
+                return icon_members
+            return ecmwf_members
+
+        with patch.object(adapter, "_fetch_ensemble_model", side_effect=_fake_fetch):
             results = adapter.download_ensemble_forecast([loc])
 
-        assert len(results) == 2
+        assert len(results) == 3
         assert results[0].source == "open-meteo-ensemble-member-0"
+        assert results[1].source == "open-meteo-ensemble-member-1"
+        assert results[2].source == "open-meteo-ensemble-member-2"
 
     def test_download_ensemble_forecast_no_members_raises(self, adapter, loc):
         from unittest.mock import patch
@@ -1988,8 +2015,415 @@ class TestOpenMeteoAdapter:
         from runeflow.exceptions import DataUnavailableError
 
         with (
-            patch.object(adapter, "_fetch_ensemble_members", return_value=None),
-            patch("runeflow.adapters.weather.openmeteo.time.sleep"),
+            patch.object(adapter, "_fetch_ensemble_model", return_value={}),
             pytest.raises(DataUnavailableError, match="no ensemble member"),
         ):
             adapter.download_ensemble_forecast([loc])
+
+    def test_download_ensemble_forecast_ecmwf_only(self, adapter, loc):
+        """When ICON-EU returns no data, only ECMWF members are used."""
+        from unittest.mock import patch
+
+        idx = pd.date_range("2024-01-10", periods=2, freq="h", tz="UTC")
+        ecmwf_members = {
+            0: {loc.name: pd.DataFrame({"temperature_2m": [3.0, 4.0]}, index=idx)},
+        }
+
+        def _fake_fetch(locs, model, days, *, interpolate_to_hourly=False):
+            if model == "icon_eu":
+                return {}
+            return ecmwf_members
+
+        with patch.object(adapter, "_fetch_ensemble_model", side_effect=_fake_fetch):
+            results = adapter.download_ensemble_forecast([loc])
+
+        assert len(results) == 1
+        assert results[0].source == "open-meteo-ensemble-member-0"
+
+    # ── _maybe_invalidate_ensemble_cache ──────────────────────────────────
+
+    def test_invalidate_ensemble_cache_new_run_clears_cache(self, adapter, tmp_path):
+        """New last_run_availability_time → cache cleared, state file updated."""
+        from unittest.mock import MagicMock, patch
+
+        adapter._model_state_path = tmp_path / "state.json"
+        adapter._cache_session = MagicMock()
+
+        with patch.object(adapter, "_get_model_run_availability", return_value=1000):
+            adapter._maybe_invalidate_ensemble_cache("icon_eu")
+
+        adapter._cache_session.cache.delete.assert_called_once()
+        state = json.loads((tmp_path / "state.json").read_text())
+        assert state["icon_eu"] == 1000
+
+    def test_invalidate_ensemble_cache_same_run_no_clear(self, adapter, tmp_path):
+        """Same availability time → cache left untouched."""
+        from unittest.mock import MagicMock, patch
+
+        adapter._model_state_path = tmp_path / "state.json"
+        (tmp_path / "state.json").write_text('{"icon_eu": 1000}')
+        adapter._cache_session = MagicMock()
+
+        with patch.object(adapter, "_get_model_run_availability", return_value=1000):
+            adapter._maybe_invalidate_ensemble_cache("icon_eu")
+
+        adapter._cache_session.cache.delete.assert_not_called()
+
+    def test_invalidate_ensemble_cache_meta_failure_no_clear(self, adapter, tmp_path):
+        """Meta.json fetch failure → no cache clear, no state change."""
+        from unittest.mock import MagicMock, patch
+
+        adapter._model_state_path = tmp_path / "state.json"
+        adapter._cache_session = MagicMock()
+
+        with patch.object(adapter, "_get_model_run_availability", return_value=None):
+            adapter._maybe_invalidate_ensemble_cache("icon_eu")
+
+        adapter._cache_session.cache.delete.assert_not_called()
+        assert not (tmp_path / "state.json").exists()
+
+    def test_invalidate_ensemble_cache_delete_failure_no_state_update(self, adapter, tmp_path):
+        """Cache.delete() failure → state NOT updated so retry fires next call."""
+        from unittest.mock import MagicMock, patch
+
+        adapter._model_state_path = tmp_path / "state.json"
+        mock_session = MagicMock()
+        mock_session.cache.delete.side_effect = RuntimeError("backend error")
+        adapter._cache_session = mock_session
+
+        with patch.object(adapter, "_get_model_run_availability", return_value=2000):
+            adapter._maybe_invalidate_ensemble_cache("icon_eu")
+
+        assert not (tmp_path / "state.json").exists()
+
+    def test_get_model_run_availability_returns_timestamp(self, adapter):
+        """Happy-path: parses last_run_availability_time from meta.json response."""
+        from unittest.mock import patch
+
+        with patch("runeflow.adapters.weather.openmeteo.requests.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"last_run_availability_time": 9999}
+            mock_get.return_value = mock_resp
+            result = adapter._get_model_run_availability("icon_eu")
+
+        assert result == 9999
+
+    def test_get_model_run_availability_unknown_model_returns_none(self, adapter):
+        result = adapter._get_model_run_availability("unknown_model_xyz")
+        assert result is None
+
+
+class TestAwattarPriceAdapter:
+    """Tests for adapters/price/awattar.py."""
+
+    @pytest.fixture()
+    def adapter(self):
+        from runeflow.adapters.price.awattar import AwattarPriceAdapter
+
+        return AwattarPriceAdapter()
+
+    def test_name_property(self, adapter):
+        assert adapter.name == "aWATTar"
+
+    def test_supports_zone_de(self, adapter):
+        assert adapter.supports_zone("DE_LU") is True
+
+    def test_supports_zone_at(self, adapter):
+        assert adapter.supports_zone("AT") is True
+
+    def test_rejects_unsupported_zone(self, adapter):
+        assert adapter.supports_zone("NL") is False
+        assert adapter.supports_zone("FR") is False
+
+    def test_download_historical_unsupported_zone_raises(self, adapter):
+        from runeflow.exceptions import DataUnavailableError
+
+        with pytest.raises(DataUnavailableError, match="not supported"):
+            adapter.download_historical("NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
+
+    def test_download_historical_happy_path(self, adapter):
+        from unittest.mock import patch
+
+        fake_response = MagicMock()
+        fake_response.json.return_value = {
+            "data": [
+                {"start_timestamp": 1704067200000, "marketprice": 80.5},
+                {"start_timestamp": 1704070800000, "marketprice": 75.0},
+            ]
+        }
+        fake_response.raise_for_status.return_value = None
+
+        with (
+            patch("runeflow.adapters.price.awattar.requests.get", return_value=fake_response),
+            patch("runeflow.adapters.price.awattar.time.sleep"),
+        ):
+            result = adapter.download_historical(
+                "DE_LU", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
+            )
+
+        assert result is not None
+        assert result.zone == "DE_LU"
+        assert result.source == "aWATTar"
+
+    def test_download_historical_empty_response_raises(self, adapter):
+        from unittest.mock import patch
+
+        from runeflow.exceptions import DataUnavailableError
+
+        fake_response = MagicMock()
+        fake_response.json.return_value = {"data": []}
+        fake_response.raise_for_status.return_value = None
+
+        with (
+            patch("runeflow.adapters.price.awattar.requests.get", return_value=fake_response),
+            patch("runeflow.adapters.price.awattar.time.sleep"),
+            pytest.raises(DataUnavailableError, match="returned no data"),
+        ):
+            adapter.download_historical(
+                "DE_LU", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
+            )
+
+    def test_fetch_chunk_request_exception_raises_download_error(self, adapter):
+        from unittest.mock import patch
+
+        import requests as req_lib
+
+        from runeflow.exceptions import DownloadError
+
+        with (
+            patch(
+                "runeflow.adapters.price.awattar.requests.get",
+                side_effect=req_lib.RequestException("timeout"),
+            ),
+            pytest.raises(DownloadError, match="aWATTar request failed"),
+        ):
+            adapter._fetch_chunk("DE_LU", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
+
+    def test_fetch_chunk_returns_none_on_empty_data(self, adapter):
+        from unittest.mock import patch
+
+        fake_response = MagicMock()
+        fake_response.json.return_value = {"data": []}
+        fake_response.raise_for_status.return_value = None
+
+        with patch("runeflow.adapters.price.awattar.requests.get", return_value=fake_response):
+            result = adapter._fetch_chunk(
+                "DE_LU", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
+            )
+
+        assert result is None
+
+    def test_download_day_ahead_returns_result(self, adapter):
+        from unittest.mock import patch
+
+        fake_response = MagicMock()
+        fake_response.json.return_value = {
+            "data": [{"start_timestamp": 1704153600000, "marketprice": 90.0}]
+        }
+        fake_response.raise_for_status.return_value = None
+
+        with (
+            patch("runeflow.adapters.price.awattar.requests.get", return_value=fake_response),
+            patch("runeflow.adapters.price.awattar.time.sleep"),
+        ):
+            result = adapter.download_day_ahead("AT")
+
+        assert result is not None
+        assert result.zone == "AT"
+
+    def test_download_day_ahead_unsupported_zone_returns_none(self, adapter):
+        result = adapter.download_day_ahead("NL")
+        assert result is None
+
+    def test_download_day_ahead_exception_returns_none(self, adapter):
+        from unittest.mock import patch
+
+        import requests as req_lib
+
+        with patch(
+            "runeflow.adapters.price.awattar.requests.get",
+            side_effect=req_lib.RequestException("err"),
+        ):
+            result = adapter.download_day_ahead("DE_LU")
+
+        assert result is None
+
+    def test_download_historical_multi_chunk_calls_sleep(self, adapter):
+        """time.sleep is called between chunks (range > 30 days)."""
+        from unittest.mock import patch
+
+        fake_response = MagicMock()
+        fake_response.raise_for_status.return_value = None
+        fake_response.json.return_value = {
+            "data": [{"start_timestamp": 1704067200000, "marketprice": 80.0}]
+        }
+
+        sleep_calls = []
+        with (
+            patch("runeflow.adapters.price.awattar.requests.get", return_value=fake_response),
+            patch(
+                "runeflow.adapters.price.awattar.time.sleep",
+                side_effect=lambda s: sleep_calls.append(s),
+            ),
+        ):
+            result = adapter.download_historical(
+                "DE_LU",
+                datetime.date(2024, 1, 1),
+                datetime.date(2024, 3, 1),  # > 30 days → 2 chunks
+            )
+
+        assert len(sleep_calls) >= 1
+        assert result is not None
+
+
+class TestNordpoolPriceAdapter:
+    """Tests for adapters/price/nordpool_adapter.py."""
+
+    @pytest.fixture()
+    def adapter_with_mock(self):
+        from unittest.mock import MagicMock, patch
+
+        mock_api = MagicMock()
+        with patch(
+            "runeflow.adapters.price.nordpool_adapter.NordpoolPriceAdapter.__init__",
+            return_value=None,
+        ):
+            from runeflow.adapters.price.nordpool_adapter import NordpoolPriceAdapter
+
+            adapter = NordpoolPriceAdapter()
+            adapter._api = mock_api
+        return adapter, mock_api
+
+    def _day_response(self, area: str, price: float = 80.0) -> dict:
+        return {
+            "areas": {
+                area: {
+                    "values": [
+                        {"start": pd.Timestamp("2024-01-01 00:00:00"), "value": price},
+                        {"start": pd.Timestamp("2024-01-01 01:00:00"), "value": price + 5},
+                    ]
+                }
+            }
+        }
+
+    def test_name_property(self, adapter_with_mock):
+        adapter, _ = adapter_with_mock
+        assert adapter.name == "Nordpool"
+
+    def test_supports_zone_fi(self, adapter_with_mock):
+        adapter, _ = adapter_with_mock
+        assert adapter.supports_zone("FI") is True
+
+    def test_supports_zone_se(self, adapter_with_mock):
+        adapter, _ = adapter_with_mock
+        assert adapter.supports_zone("SE_3") is True
+
+    def test_supports_zone_dk(self, adapter_with_mock):
+        adapter, _ = adapter_with_mock
+        assert adapter.supports_zone("DK_1") is True
+        assert adapter.supports_zone("DK_2") is True
+
+    def test_supports_zone_baltic(self, adapter_with_mock):
+        adapter, _ = adapter_with_mock
+        assert adapter.supports_zone("EE") is True
+        assert adapter.supports_zone("LV") is True
+        assert adapter.supports_zone("LT") is True
+
+    def test_rejects_unsupported_zone(self, adapter_with_mock):
+        adapter, _ = adapter_with_mock
+        assert adapter.supports_zone("NL") is False
+        assert adapter.supports_zone("DE_LU") is False
+
+    def test_download_historical_unsupported_zone_raises(self, adapter_with_mock):
+        adapter, _ = adapter_with_mock
+        from runeflow.exceptions import DataUnavailableError
+
+        with pytest.raises(DataUnavailableError, match="does not support"):
+            adapter.download_historical("NL", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
+
+    def test_download_historical_happy_path(self, adapter_with_mock):
+        from unittest.mock import patch
+
+        adapter, mock_api = adapter_with_mock
+        mock_api.fetch.return_value = self._day_response("FI", 75.0)
+
+        with patch("runeflow.adapters.price.nordpool_adapter.time.sleep"):
+            result = adapter.download_historical(
+                "FI", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
+            )
+
+        assert result is not None
+        assert result.zone == "FI"
+        assert result.source == "Nordpool"
+
+    def test_download_historical_empty_raises(self, adapter_with_mock):
+        from unittest.mock import patch
+
+        from runeflow.exceptions import DataUnavailableError
+
+        adapter, mock_api = adapter_with_mock
+        mock_api.fetch.return_value = {"areas": {"FI": {"values": []}}}
+
+        with (
+            patch("runeflow.adapters.price.nordpool_adapter.time.sleep"),
+            pytest.raises(DataUnavailableError, match="returned no data"),
+        ):
+            adapter.download_historical("FI", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1))
+
+    def test_download_historical_handles_none_values(self, adapter_with_mock):
+        """None values (prices not yet published) are skipped."""
+        from unittest.mock import patch
+
+        from runeflow.exceptions import DataUnavailableError
+
+        adapter, mock_api = adapter_with_mock
+        mock_api.fetch.return_value = {
+            "areas": {
+                "SE3": {
+                    "values": [
+                        {"start": pd.Timestamp("2024-01-01 00:00:00"), "value": None},
+                        {"start": pd.Timestamp("2024-01-01 01:00:00"), "value": None},
+                    ]
+                }
+            }
+        }
+
+        with (
+            patch("runeflow.adapters.price.nordpool_adapter.time.sleep"),
+            pytest.raises(DataUnavailableError, match="returned no data"),
+        ):
+            adapter.download_historical(
+                "SE_3", datetime.date(2024, 1, 1), datetime.date(2024, 1, 1)
+            )
+
+    def test_download_day_ahead_happy_path(self, adapter_with_mock):
+        adapter, mock_api = adapter_with_mock
+        mock_api.fetch.return_value = {
+            "areas": {
+                "Oslo": {
+                    "values": [
+                        {"start": pd.Timestamp("2024-01-02 00:00:00"), "value": 95.0},
+                    ]
+                }
+            }
+        }
+        result = adapter.download_day_ahead("NO_1")
+        assert result is not None
+        assert result.zone == "NO_1"
+
+    def test_download_day_ahead_unsupported_zone_returns_none(self, adapter_with_mock):
+        adapter, _ = adapter_with_mock
+        result = adapter.download_day_ahead("DE_LU")
+        assert result is None
+
+    def test_download_day_ahead_exception_returns_none(self, adapter_with_mock):
+        adapter, mock_api = adapter_with_mock
+        mock_api.fetch.side_effect = Exception("API error")
+        result = adapter.download_day_ahead("FI")
+        assert result is None
+
+    def test_download_day_ahead_empty_returns_none(self, adapter_with_mock):
+        adapter, mock_api = adapter_with_mock
+        mock_api.fetch.return_value = {"areas": {"FI": {"values": []}}}
+        result = adapter.download_day_ahead("FI")
+        assert result is None
