@@ -24,6 +24,8 @@ _AREA_MAP: dict[str, Area] = {area.name: area for area in Area}
 _ZONE_ALIASES: dict[str, str] = {
     "DE_LU": "DE_LU",
     "DE": "DE_LU",
+    # Ireland's day-ahead market uses the Single Electricity Market area code
+    "IE": "IE_SEM",
 }
 
 

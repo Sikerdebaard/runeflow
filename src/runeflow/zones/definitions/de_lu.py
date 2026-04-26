@@ -46,6 +46,7 @@ DE_LU = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_awattar=True,
     tariff_formulas=DE_TARIFF_FORMULAS,
     feature_groups=(
         "temporal",

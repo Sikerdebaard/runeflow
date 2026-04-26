@@ -79,27 +79,80 @@ pre, code { font-family: "Cascadia Code", "Fira Code", Consolas, monospace; font
   margin-left: .4rem;
 }
 
+/* ── Zone search bar ──────────────────────────────────────────────────── */
+.zone-search-wrap {
+  position: relative; display: flex; align-items: center;
+  max-width: 540px; margin-bottom: .5rem;
+}
+.zone-search-icon {
+  position: absolute; left: .75rem; font-size: 1.1rem;
+  color: var(--text-muted); pointer-events: none; line-height: 1;
+}
+.zone-search {
+  width: 100%; padding: .6rem .75rem .6rem 2.25rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: .95rem; font-family: var(--font); background: var(--bg);
+  color: var(--text); outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.zone-search:focus {
+  border-color: var(--dark-violet);
+  box-shadow: 0 0 0 3px rgba(167, 24, 199, .12);
+}
+.zone-search-hint {
+  white-space: nowrap; margin-left: .75rem; font-size: .78rem;
+  color: var(--text-muted); display: none;
+}
+@media (min-width: 640px) { .zone-search-hint { display: inline; } }
+.zone-search-hint kbd {
+  display: inline-block; padding: .1rem .35rem;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-alt); font-size: .72rem; font-family: var(--font);
+  line-height: 1.5;
+}
+.zone-search-count { display: block; min-height: 1.25rem; margin-bottom: .75rem; }
+
 /* ── Zone cards (landing page) ────────────────────────────────────────── */
 .zone-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: .75rem;
 }
 .zone-card {
-  display: flex; align-items: center;
+  display: flex; align-items: flex-start; gap: .75rem;
   border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 1rem 1.25rem;
+  padding: .9rem 1rem; min-height: 72px;
   transition: box-shadow .15s, border-color .15s;
-  color: var(--text);
+  color: var(--text); text-decoration: none;
 }
-.zone-card:hover { box-shadow: var(--shadow); border-color: var(--dark-violet); text-decoration: none; }
-.zone-card-flag {
-  font-size: 1.75rem; font-weight: 800;
-  color: var(--dark-violet); margin-right: 1rem;
+.zone-card:hover { box-shadow: var(--shadow); border-color: var(--dark-violet); }
+.zone-card--active {
+  border-color: var(--dark-violet);
+  box-shadow: 0 0 0 2px rgba(167, 24, 199, .25);
+  background: var(--bg-alt);
 }
-.zone-card-body h2 { font-size: 1rem; font-weight: 600; }
-.zone-card-body p { font-size: .8rem; color: var(--text-muted); }
-.zone-card-arrow { margin-left: auto; font-size: 1.5rem; color: var(--border); }
+.zone-card.zone-hidden { display: none; }
+.zone-flag {
+  font-size: 1.85rem; line-height: 1; flex-shrink: 0;
+  margin-top: .05rem;
+}
+.zone-card-body { flex: 1; min-width: 0; }
+.zone-card-country { font-size: .95rem; font-weight: 700; line-height: 1.2; }
+.zone-card-region {
+  font-size: .78rem; color: var(--text-muted);
+  line-height: 1.3; margin-top: .1rem;
+}
+.zone-card-meta {
+  display: flex; align-items: center; gap: .5rem;
+  margin-top: .35rem; flex-wrap: wrap;
+}
+.zone-code {
+  font-size: .72rem; padding: .1rem .35rem;
+  background: var(--bg-alt); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--dark-violet);
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+}
+.zone-providers { font-size: .72rem; color: var(--text-muted); }
 
 /* ── Provider cards (zone page) ───────────────────────────────────────── */
 .provider-grid {
@@ -214,6 +267,41 @@ tr.hidden { display: none; }
 .empty  { color: var(--text-muted); padding: 2rem; text-align: center; }
 .ts     { font-variant-numeric: tabular-nums; }
 
+/* ── Performance table ────────────────────────────────────────────────── */
+.perf-section { margin-bottom: 2.5rem; }
+.perf-section h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: .85rem; }
+.perf-table {
+  width: 100%; border-collapse: collapse; font-size: .875rem;
+  font-variant-numeric: tabular-nums;
+}
+.perf-table th {
+  text-align: left; padding: .55rem 1rem;
+  border-bottom: 2px solid var(--border);
+  color: var(--text-muted); font-weight: 600; white-space: nowrap;
+}
+.perf-table th.group-header {
+  text-align: center; font-size: .7rem; text-transform: uppercase;
+  letter-spacing: .07em; border-bottom: 1px solid var(--border);
+  padding-bottom: .3rem; background: var(--bg-alt);
+}
+.perf-table th.group-sep { border-left: 2px solid var(--border); }
+.perf-table td {
+  padding: .45rem 1rem; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.perf-table td.group-sep { border-left: 2px solid var(--border); }
+.perf-table tr:hover td { background: var(--bg-alt); }
+.perf-table td.num { text-align: right; }
+.perf-table th.num { text-align: right; }
+.perf-table .unit { font-weight: 400; color: var(--text-muted); font-size: .75rem; }
+.perf-table .rank-badge {
+  display: inline-block; min-width: 1.5rem; text-align: center;
+  padding: .1rem .3rem; border-radius: 3px;
+  background: var(--bg-alt); font-weight: 700; font-size: .8rem;
+}
+.perf-table tr:first-child .rank-badge { background: #c9a227; color: #fff; }
+.perf-table tr:nth-child(2) .rank-badge { background: #9ca3af; color: #fff; }
+.perf-table tr:nth-child(3) .rank-badge { background: #a16207; color: #fff; }
+
 /* ── Advanced analytics section ───────────────────────────────────────── */
 .advanced-section { margin: 2.5rem 0 1.5rem; }
 .advanced-toggle {
@@ -255,7 +343,7 @@ details[open] > .advanced-toggle h2::before { transform: rotate(90deg); }
 /* ── Responsive ───────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .site-header { flex-direction: column; gap: .5rem; text-align: center; }
-  .zone-grid { grid-template-columns: 1fr; }
+  .zone-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .provider-grid { grid-template-columns: 1fr; }
   .current-price-value { font-size: 2rem; }
   .page-hero h1 { font-size: 1.4rem; }

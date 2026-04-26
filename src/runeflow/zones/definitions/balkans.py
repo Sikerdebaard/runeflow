@@ -89,7 +89,7 @@ RS = ZoneConfig(
 )
 
 # ---------------------------------------------------------------------------
-# BA — Bosnia-Herzegovina
+# BA — Bosnia-Herzegovina  (disabled: no ENTSO-E day-ahead prices published)
 # ---------------------------------------------------------------------------
 
 BA = ZoneConfig(
@@ -145,6 +145,10 @@ BA = ZoneConfig(
     ensemble_strategy="condition_gated",
     historical_years=tuple(range(2020, 2027)),
     min_training_years=2,
+    disabled_reason=(
+        "Bosnia-Herzegovina does not publish day-ahead prices on the ENTSO-E Transparency "
+        "Platform (NoMatchingDataError confirmed). No alternative price data source available."
+    ),
 )
 
 # ---------------------------------------------------------------------------
@@ -268,7 +272,7 @@ MK = ZoneConfig(
 )
 
 # ---------------------------------------------------------------------------
-# XK — Kosovo
+# XK — Kosovo  (disabled: no ENTSO-E day-ahead prices published)
 # ---------------------------------------------------------------------------
 
 XK = ZoneConfig(
@@ -320,6 +324,10 @@ XK = ZoneConfig(
     ensemble_strategy="condition_gated",
     historical_years=tuple(range(2020, 2027)),
     min_training_years=2,
+    disabled_reason=(
+        "Kosovo does not publish day-ahead prices on the ENTSO-E Transparency Platform "
+        "(NoMatchingDataError confirmed). No alternative price data source available."
+    ),
 )
 
 ZoneRegistry.register(RS)

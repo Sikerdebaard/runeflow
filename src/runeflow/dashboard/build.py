@@ -157,6 +157,15 @@ class BuildSiteZoneService:
             timezone=self._zone_cfg.timezone,
         )
 
+        # Render per-zone performance page
+        _render_zone_performance_page(
+            output_path=zone_dir / "performance" / "index.html",
+            zone_code=zone,
+            zone_name=self._zone_cfg.name,
+            store=self._store,
+            zone_cfg=self._zone_cfg,
+        )
+
         logger.info("[%s] site built in %s", zone, zone_dir)
 
 
@@ -183,6 +192,13 @@ class BuildSiteGlobalService:
         ExportMetaService().run(output_path=output_dir / "api" / "meta.json")
         ExportQualityService().run(
             output_path=output_dir / "api" / "quality.json",
+            zones=processed_zones,
+        )
+
+        # Render global performance page
+        _render_global_performance_page(
+            output_path=output_dir / "performance" / "index.html",
+            perf_json_path=output_dir / "api" / "performance.json",
             zones=processed_zones,
         )
 
@@ -217,6 +233,76 @@ class BuildSiteGlobalService:
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _ASSETS_DIR = Path(__file__).parent / "assets"
 
+# Country names keyed by 2-letter zone-code prefix (ENTSO-E zone code first 2 chars)
+_ZONE_COUNTRY_NAMES: dict[str, str] = {
+    "AT": "Austria",
+    "BE": "Belgium",
+    "BG": "Bulgaria",
+    "CH": "Switzerland",
+    "CZ": "Czechia",
+    "DE": "Germany",
+    "DK": "Denmark",
+    "EE": "Estonia",
+    "ES": "Spain",
+    "FI": "Finland",
+    "FR": "France",
+    "GR": "Greece",
+    "HR": "Croatia",
+    "HU": "Hungary",
+    "IT": "Italy",
+    "LT": "Lithuania",
+    "LV": "Latvia",
+    "ME": "Montenegro",
+    "MK": "North Macedonia",
+    "NL": "Netherlands",
+    "NO": "Norway",
+    "PL": "Poland",
+    "PT": "Portugal",
+    "RO": "Romania",
+    "RS": "Serbia",
+    "SE": "Sweden",
+    "SI": "Slovenia",
+    "SK": "Slovakia",
+}
+
+# ISO-3166-1 alpha-3 codes for search aliases
+_ZONE_ISO3: dict[str, str] = {
+    "AT": "AUT",
+    "BE": "BEL",
+    "BG": "BGR",
+    "CH": "CHE",
+    "CZ": "CZE",
+    "DE": "DEU",
+    "DK": "DNK",
+    "EE": "EST",
+    "ES": "ESP",
+    "FI": "FIN",
+    "FR": "FRA",
+    "GR": "GRC",
+    "HR": "HRV",
+    "HU": "HUN",
+    "IT": "ITA",
+    "LT": "LTU",
+    "LV": "LVA",
+    "ME": "MNE",
+    "MK": "MKD",
+    "NL": "NLD",
+    "NO": "NOR",
+    "PL": "POL",
+    "PT": "PRT",
+    "RO": "ROU",
+    "RS": "SRB",
+    "SE": "SWE",
+    "SI": "SVN",
+    "SK": "SVK",
+}
+
+
+def _zone_flag(code2: str) -> str:
+    """Return regional-indicator flag emoji for a 2-letter country code."""
+    base = 0x1F1E6 - ord("A")
+    return chr(base + ord(code2[0])) + chr(base + ord(code2[1]))
+
 
 def _get_env() -> _Jinja2Env:
     """Return (and cache) the Jinja2 Environment."""
@@ -248,14 +334,41 @@ def _render_index_page(
 ) -> None:
     from runeflow.zones.registry import ZoneRegistry
 
-    zone_cards = [
-        {
-            "code": z,
-            "name": ZoneRegistry.get(z).name,
-            "provider_count": len(ZoneRegistry.get(z).tariff_formulas),
-        }
-        for z in zones
-    ]
+    zone_cards = []
+    for z in zones:
+        cfg = ZoneRegistry.get(z)
+        iso2 = z[:2].upper()
+        country_name = _ZONE_COUNTRY_NAMES.get(iso2, cfg.name)
+        # Region = the part of the full name that comes after the country prefix
+        region = cfg.name.removeprefix(country_name).strip(" -")
+        iso3 = _ZONE_ISO3.get(iso2, "")
+        flag = _zone_flag(iso2)
+        search_tags = " ".join(
+            filter(
+                None,
+                [
+                    z.lower(),
+                    cfg.name.lower(),
+                    country_name.lower(),
+                    region.lower(),
+                    iso2.lower(),
+                    iso3.lower(),
+                ],
+            )
+        )
+        zone_cards.append(
+            {
+                "code": z,
+                "name": cfg.name,
+                "country_name": country_name,
+                "region": region,
+                "flag": flag,
+                "iso2": iso2,
+                "iso3": iso3,
+                "provider_count": len(cfg.tariff_formulas),
+                "search_tags": search_tags,
+            }
+        )
     _render("index.html", output_path, zones=zone_cards, generated_at=generated_at)
 
 
@@ -345,6 +458,76 @@ def _copy_assets(dest_dir: Path) -> None:
     if _ASSETS_DIR.exists():
         for asset in _ASSETS_DIR.iterdir():
             shutil.copy2(asset, dest_dir / asset.name)
+
+
+def _render_zone_performance_page(
+    *,
+    output_path: Path,
+    zone_code: str,
+    zone_name: str,
+    store: DataStore,
+    zone_cfg: ZoneConfig,
+) -> None:
+    """Render the per-zone performance page (best-effort, silent on failure)."""
+    try:
+        import json as _json
+
+        from runeflow.services.export_performance import ExportPerformanceService
+        from runeflow.services.performance import PerformanceService
+
+        svc = PerformanceService()
+        perf = svc.compute_zone_performance()
+        svc_exp = ExportPerformanceService()
+        perf_dict = svc_exp._serialize_zone(perf)
+        _render(
+            "zone_performance.html",
+            output_path,
+            zone_code=zone_code,
+            zone_name=zone_name,
+            performance=perf_dict,
+            performance_json=_json.dumps(perf_dict, default=str),
+            generated_at=pd.Timestamp.now("UTC").isoformat(),
+        )
+        logger.info("[%s] zone performance page written", zone_code)
+    except Exception as exc:
+        logger.warning("[%s] zone performance page failed: %s", zone_code, exc)
+
+
+def _render_global_performance_page(
+    *,
+    output_path: Path,
+    perf_json_path: Path,
+    zones: list[str],
+) -> None:
+    """Render the global cross-zone performance page (best-effort)."""
+    try:
+        import json as _json
+
+        from runeflow.services.export_performance import ExportPerformanceService
+
+        svc = ExportPerformanceService()
+        payload = svc.run(output_path=perf_json_path, zones=zones)
+
+        # Build zone list sorted by MAE ascending (nulls last) — matches heading
+        rankings = payload.get("_rankings", [])
+        ranked_codes = [r["zone"] for r in rankings]
+        unranked_codes = [z for z in zones if z not in set(ranked_codes)]
+        zone_dicts = []
+        for z in ranked_codes + unranked_codes:
+            zd = payload.get(z)
+            if isinstance(zd, dict):
+                zone_dicts.append(zd)
+        _render(
+            "performance.html",
+            output_path,
+            zones=zone_dicts,
+            rankings=rankings,
+            performance_json=_json.dumps(payload, default=str),
+            generated_at=pd.Timestamp.now("UTC").isoformat(),
+        )
+        logger.info("Global performance page written to %s", output_path)
+    except Exception as exc:
+        logger.warning("Global performance page failed: %s", exc)
 
 
 def _write_robots_txt(dest: Path) -> None:

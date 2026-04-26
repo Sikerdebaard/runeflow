@@ -88,10 +88,17 @@ GB = ZoneConfig(
     ensemble_strategy="condition_gated",
     historical_years=tuple(range(2020, 2027)),
     min_training_years=2,
+    disabled_reason=(
+        "Great Britain left ENTSO-E Day-Ahead market coupling after Brexit (2021). "
+        "Prices are no longer published on the Transparency Platform. "
+        "A dedicated BMRS/Elexon adapter would be required to re-enable this zone."
+    ),
 )
 
 # ---------------------------------------------------------------------------
 # IE — Ireland (Single Electricity Market, shared with Northern Ireland)
+# ---------------------------------------------------------------------------
+# IE — Ireland  (disabled: no ENTSO-E historical day-ahead prices available)
 # ---------------------------------------------------------------------------
 
 IE = ZoneConfig(
@@ -143,6 +150,12 @@ IE = ZoneConfig(
     ensemble_strategy="condition_gated",
     historical_years=tuple(range(2020, 2027)),
     min_training_years=2,
+    disabled_reason=(
+        "Ireland's Single Electricity Market (SEM/IE_SEM) does not publish historical "
+        "day-ahead prices on the ENTSO-E Transparency Platform (NoMatchingDataError for all "
+        "years 2020-2026 confirmed). A dedicated SEMO/SEMOPX adapter would be required to "
+        "re-enable this zone."
+    ),
 )
 
 ZoneRegistry.register(GB)

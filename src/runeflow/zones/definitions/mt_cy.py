@@ -66,6 +66,11 @@ MT = ZoneConfig(
     ensemble_strategy="condition_gated",
     historical_years=tuple(range(2020, 2027)),
     min_training_years=2,
+    disabled_reason=(
+        "Malta is an island market connected only via HVDC to Sicily. No day-ahead prices "
+        "are published on the ENTSO-E Transparency Platform (NoMatchingDataError confirmed). "
+        "A dedicated Maltese market adapter would be required to re-enable this zone."
+    ),
 )
 
 CY = ZoneConfig(
@@ -110,6 +115,11 @@ CY = ZoneConfig(
     ensemble_strategy="condition_gated",
     historical_years=tuple(range(2020, 2027)),
     min_training_years=2,
+    disabled_reason=(
+        "Cyprus is an isolated island grid with no reliable AC interconnection to continental "
+        "Europe. No day-ahead prices are published on ENTSO-E (NoMatchingDataError confirmed). "
+        "A dedicated Cypriot market adapter would be required to re-enable this zone."
+    ),
 )
 
 ZoneRegistry.register(MT)
