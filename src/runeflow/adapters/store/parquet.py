@@ -263,7 +263,58 @@ class ParquetStore(DataStore):
     def save_forecast(self, result: ForecastResult) -> None:
         path = self._forecast_latest_path(result.zone)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
+        self._write_forecast_json(result, path)
+        self.save_forecast_archive(result)
+
+    def load_latest_forecast(self, zone: str) -> ForecastResult | None:
+        path = self._forecast_latest_path(zone)
+        return self._load_forecast_json(path)
+
+    def save_forecast_archive(self, result: ForecastResult) -> None:
+        """Save a timestamped forecast archive alongside latest.json."""
+        ts = result.created_at.strftime("%Y%m%d_%H%M")
+        archive_dir = self._root / "forecasts" / result.zone / "archive"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        archive_path = archive_dir / f"{ts}.json"
+        self._write_forecast_json(result, archive_path)
+        self._cleanup_archive(result.zone, max_days=30)
+
+    def load_forecast_archive(self, zone: str, days_back: int = 30) -> list[ForecastResult]:
+        """Load archived forecasts from the last *days_back* days."""
+        archive_dir = self._root / "forecasts" / zone / "archive"
+        if not archive_dir.exists():
+            return []
+        cutoff = pd.Timestamp.now("UTC") - pd.Timedelta(days=days_back)
+        results = []
+        for path in sorted(archive_dir.glob("*.json")):
+            try:
+                ts = pd.Timestamp(path.stem.replace("_", "T") + "00", tz="UTC")
+                if ts < cutoff:
+                    continue
+            except Exception:
+                continue
+            forecast = self._load_forecast_json(path)
+            if forecast is not None:
+                results.append(forecast)
+        return results
+
+    def _cleanup_archive(self, zone: str, max_days: int = 30) -> None:
+        """Delete archived forecasts older than *max_days*."""
+        archive_dir = self._root / "forecasts" / zone / "archive"
+        if not archive_dir.exists():
+            return
+        cutoff = pd.Timestamp.now("UTC") - pd.Timedelta(days=max_days)
+        for path in archive_dir.glob("*.json"):
+            try:
+                ts = pd.Timestamp(path.stem.replace("_", "T") + "00", tz="UTC")
+                if ts < cutoff:
+                    path.unlink()
+            except Exception:
+                pass
+
+    def _write_forecast_json(self, result: ForecastResult, path: Path) -> None:
+        """Serialise *result* to *path* (atomic)."""
+        data: dict = {
             "zone": result.zone,
             "created_at": result.created_at.isoformat(),
             "model_version": result.model_version,
@@ -288,7 +339,6 @@ class ParquetStore(DataStore):
                 for k, series in result.model_predictions.items()
             },
         }
-        # Ensemble members: store as {col: {ts_iso: val, …}, …}
         if result.ensemble_members is not None and not result.ensemble_members.empty:
             ens = result.ensemble_members
             data["ensemble_members"] = {
@@ -300,11 +350,14 @@ class ParquetStore(DataStore):
             }
         _atomic_write(path, lambda tmp: tmp.write_text(json.dumps(data), encoding="utf-8"))  # type: ignore[arg-type]
 
-    def load_latest_forecast(self, zone: str) -> ForecastResult | None:
-        path = self._forecast_latest_path(zone)
+    def _load_forecast_json(self, path: Path) -> ForecastResult | None:
+        """Deserialise a forecast JSON file; returns None if missing or corrupt."""
         if not path.exists():
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
         points = tuple(
             ForecastPoint(
                 timestamp=pd.Timestamp(p["timestamp"]),
@@ -326,7 +379,6 @@ class ParquetStore(DataStore):
             k: pd.Series({pd.Timestamp(ts): float(v) for ts, v in series.items()})
             for k, series in raw_model_preds.items()
         }
-        # Restore ensemble members if present
         ens_df = pd.DataFrame()
         raw_ens = data.get("ensemble_members")
         if raw_ens:

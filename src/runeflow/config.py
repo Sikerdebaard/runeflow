@@ -57,13 +57,39 @@ class AppConfig(BaseSettings):
     ned_api_key: str = ""
 
     # ── Open-Meteo API endpoints ──────────────────────────────────────────────
-    # Set OPENMETEO_BASE_URL to override all three endpoints at once (e.g. for
-    # a self-hosted instance).  Individual endpoint vars are used as fallbacks
-    # when OPENMETEO_BASE_URL is not set.
+    # OPENMETEO_FORECAST_API — override just the deterministic forecast endpoint.
+    #   This is the only endpoint that can realistically be self-hosted: ensemble
+    #   model data is not published on the AWS open-data bucket and must stay on
+    #   the public API.  Historical archive can be self-hosted but requires TB of
+    #   disk space.
+    # OPENMETEO_BASE_URL — override all three endpoints at once.  Only useful if
+    #   you are running a fully custom Open-Meteo mirror with all datasets.
     openmeteo_base_url: str = ""
     openmeteo_historical_api: str = "https://archive-api.open-meteo.com/v1/archive"
     openmeteo_forecast_api: str = "https://api.open-meteo.com/v1/forecast"
     openmeteo_ensemble_api: str = "https://ensemble-api.open-meteo.com/v1/ensemble"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_empty_url_overrides(cls, data: object) -> object:
+        """Remove empty-string URL overrides so that field defaults take effect.
+
+        docker-compose passes ``OPENMETEO_FORECAST_API=${OPENMETEO_FORECAST_API:-}``
+        which sets the env var to ``""`` when absent in ``.env``.
+        pydantic-settings would then overwrite the field default with ``""``.
+        Deleting the key from the input dict here causes pydantic to use the
+        field default (the public Open-Meteo URL) instead.
+        """
+        if isinstance(data, dict):
+            for key in (
+                "openmeteo_historical_api",
+                "openmeteo_forecast_api",
+                "openmeteo_ensemble_api",
+                "openmeteo_base_url",
+            ):
+                if key in data and isinstance(data[key], str) and not data[key].strip():
+                    del data[key]
+        return data
 
     @model_validator(mode="after")
     def _apply_openmeteo_base_url(self) -> AppConfig:
@@ -98,6 +124,16 @@ class AppConfig(BaseSettings):
         return self.cache_dir / "weather"
 
     @property
+    def openmeteo_http_cache_dir(self) -> Path:
+        """Shared HTTP-level cache for openmeteo-requests (requests-cache SQLite).
+
+        Intentionally not zone-scoped: all zones share this cache so that
+        duplicate coordinates (e.g. Normandy used by NL, DE_LU, FR, BE) produce
+        a cache hit rather than redundant API calls.
+        """
+        return self.cache_dir / "openmeteo_http"
+
+    @property
     def generation_cache_dir(self) -> Path:
         return self.cache_dir / "generation"
 
@@ -115,6 +151,7 @@ class AppConfig(BaseSettings):
             self.cache_dir,
             self.prices_cache_dir,
             self.weather_cache_dir,
+            self.openmeteo_http_cache_dir,
             self.generation_cache_dir,
             self.models_cache_dir,
             self.forecasts_cache_dir,

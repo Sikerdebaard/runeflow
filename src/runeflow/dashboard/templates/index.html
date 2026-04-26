@@ -12,21 +12,41 @@
   </p>
 </section>
 
-<section class="zone-grid">
+<div class="zone-search-wrap">
+  <span class="zone-search-icon" aria-hidden="true">&#x2315;</span>
+  <input id="zone-search" type="search" class="zone-search"
+         placeholder="Search zone… e.g. NL, Norway, IT_CNOR"
+         autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+         autofocus>
+  <span class="zone-search-hint" aria-hidden="true">
+    <kbd>&uarr;</kbd><kbd>&darr;</kbd>&nbsp;navigate &nbsp; <kbd>&#x21B5;</kbd>&nbsp;open &nbsp; <kbd>/</kbd>&nbsp;focus
+  </span>
+</div>
+<span class="zone-search-count muted small" id="zone-search-count" aria-live="polite"></span>
+
+<section class="zone-grid" id="zone-grid">
   {% for zone in zones %}
-  <a class="zone-card" href="/{{ zone.code }}/">
-    <div class="zone-card-flag">{{ zone.code }}</div>
+  <a class="zone-card" href="/{{ zone.code }}/"
+     data-search="{{ zone.search_tags }}"
+     aria-label="{{ zone.name }}">
+    <span class="zone-flag" aria-hidden="true">{{ zone.flag }}</span>
     <div class="zone-card-body">
-      <h2>{{ zone.name }}</h2>
-      <p>{{ zone.provider_count }} providers</p>
+      <div class="zone-card-country">{{ zone.country_name }}</div>
+      {% if zone.region %}<div class="zone-card-region">{{ zone.region }}</div>{% endif %}
+      <div class="zone-card-meta">
+        <code class="zone-code">{{ zone.code }}</code>
+        <span class="zone-providers">{{ zone.provider_count }} provider{% if zone.provider_count != 1 %}s{% endif %}</span>
+      </div>
     </div>
-    <div class="zone-card-arrow">&#8250;</div>
   </a>
   {% else %}
   <p class="empty">No zones available. Run <code>runeflow build-site</code> to generate data.</p>
   {% endfor %}
 </section>
+
 {% endblock %}
+
+{% block extra_scripts %}<script src="/assets/zone-search.js"></script>{% endblock %}
 
 {% block footer_extra %}
 <a href="/docs/">API docs</a> &mdash;

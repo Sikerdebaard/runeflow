@@ -23,7 +23,7 @@ class ForecastPoint:
     model_agreement: float  # 0–1 score
     lower_static: float = 0.0  # Model-quantile-only lower bound (no weather spread)
     upper_static: float = 0.0  # Model-quantile-only upper bound (no weather spread)
-    ensemble_p50: float = 0.0  # Median of 51 weather-ensemble member predictions
+    ensemble_p50: float = 0.0  # Median of weather-ensemble member predictions
     ensemble_p25: float = 0.0  # P25 of ensemble members (IQR lower)
     ensemble_p75: float = 0.0  # P75 of ensemble members (IQR upper)
 
@@ -34,7 +34,7 @@ class ForecastResult:
 
     zone: str
     points: tuple[ForecastPoint, ...]
-    ensemble_members: pd.DataFrame  # 51-column DataFrame, one per weather scenario
+    ensemble_members: pd.DataFrame  # N-column DataFrame, one per weather scenario
     model_predictions: dict[str, pd.Series]  # Individual model outputs
     created_at: pd.Timestamp
     model_version: str

@@ -124,6 +124,7 @@ class TrainService:
         sidecar_df = pd.DataFrame(
             [
                 {
+                    "model_version": result.model_version,
                     "mae": xgb.get("mae", float("nan")),
                     "r2": xgb.get("r2", float("nan")),
                     "coverage": xgb.get("coverage", float("nan")),

@@ -47,6 +47,7 @@ AT = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_awattar=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
         "temporal",

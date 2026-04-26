@@ -56,6 +56,7 @@ DK_1 = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
         "temporal",
@@ -115,6 +116,7 @@ DK_2 = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
         "temporal",

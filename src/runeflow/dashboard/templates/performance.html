@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Model Performance{% endblock %}
+{% block meta_description %}Retrospective model accuracy and forecast performance across all Runeflow market zones. MAE, RMSE and ensemble calibration metrics.{% endblock %}
+{% block canonical_path %}/performance/{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="/">Home</a> &rsaquo; Performance
+</nav>
+
+<section class="page-hero">
+  <h1>Model Performance</h1>
+  <p>Retrospective accuracy of 30-day forecast archives compared against actual ENTSO-E day-ahead prices.</p>
+</section>
+
+{% if rankings %}
+<section class="perf-section">
+  <h2>Zone Rankings <span class="muted small">(sorted by MAE, lower is better)</span></h2>
+  <div class="table-wrapper">
+  <table class="perf-table" id="zone-rankings">
+    <thead>
+      <tr>
+        <th colspan="3"></th>
+        <th colspan="3" class="group-header group-sep">Forecast Accuracy</th>
+        <th colspan="2" class="group-header group-sep">Calibration</th>
+        <th colspan="2" class="group-header group-sep">Data</th>
+      </tr>
+      <tr>
+        <th>Rank</th>
+        <th>Zone</th>
+        <th>Name</th>
+        <th class="num group-sep">MAE <span class="unit">EUR/MWh</span></th>
+        <th class="num">RMSE <span class="unit">EUR/MWh</span></th>
+        <th class="num">Dir. Acc.</th>
+        <th class="num group-sep">Coverage</th>
+        <th class="num">R²</th>
+        <th class="num group-sep">Archived</th>
+        <th class="num">Hours</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for z in zones %}
+      <tr>
+        <td><span class="rank-badge">{{ loop.index }}</span></td>
+        <td><a href="/{{ z.zone }}/performance/">{{ z.zone }}</a></td>
+        <td>{{ z.zone_name }}</td>
+        <td class="num group-sep">{% if z.overall_mae is not none %}{{ "%.2f"|format(z.overall_mae) }}{% else %}&mdash;{% endif %}</td>
+        <td class="num">{% if z.overall_rmse is not none %}{{ "%.2f"|format(z.overall_rmse) }}{% else %}&mdash;{% endif %}</td>
+        <td class="num">{% if z.overall_directional_accuracy is not none %}{{ "%.1f"|format(z.overall_directional_accuracy * 100) }}%{% else %}&mdash;{% endif %}</td>
+        <td class="num group-sep">{% if z.ensemble_coverage_pct is not none %}{{ "%.1f"|format(z.ensemble_coverage_pct) }}%{% else %}&mdash;{% endif %}</td>
+        <td class="num">{% if z.latest_r2 is not none %}{{ "%.3f"|format(z.latest_r2) }}{% else %}&mdash;{% endif %}</td>
+        <td class="num group-sep">{{ z.n_archived_forecasts }}</td>
+        <td class="num">{{ z.n_comparable_hours }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="empty">No performance data available yet. Performance metrics accumulate over the first 30 days of operation.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+{% if zones %}
+<section class="perf-section">
+  <h2>MAE by Zone</h2>
+  <div class="chart-container" style="height:400px">
+    <canvas id="mae-bar-chart"></canvas>
+  </div>
+</section>
+{% endif %}
+{% endif %}
+
+<section class="perf-section">
+  <h2>About These Metrics</h2>
+  <dl class="metric-glossary">
+    <dt>MAE</dt><dd>Mean Absolute Error — weighted-average absolute deviation between forecast and actual price (EUR/MWh). Lower&nbsp;is better.</dd>
+    <dt>RMSE</dt><dd>Root Mean Squared Error — penalises large errors more than MAE. Lower is better.</dd>
+    <dt>Dir. Acc.</dt><dd>Directional Accuracy — fraction of hours where the forecast correctly predicted whether the price moved up or down relative to the previous hour. Higher is better; 50% is random.</dd>
+    <dt>Coverage</dt><dd>Percentage of actual prices that fell within the ensemble P25–P75 band. Ideally ~50%.</dd>
+    <dt>R²</dt><dd>Coefficient of determination from the most recent model training run (higher is better; 1.0 = perfect fit on training data). This reflects model fit quality, not live forecast accuracy.</dd>
+    <dt>Archived</dt><dd>Number of daily forecasts stored in the last 30 days with comparable actuals.</dd>
+    <dt>Hours</dt><dd>Total hourly slots where both a forecast and an actual price are available.</dd>
+    <dt>Currency</dt><dd>All prices are in <strong>EUR/MWh</strong> as published on the ENTSO-E Transparency Platform. Zones outside the eurozone (Norway, Sweden, Denmark, Poland, etc.) are included — ENTSO-E and Nordpool both report cross-border prices in EUR/MWh.</dd>
+  </dl>
+</section>
+
+<script type="application/json" id="__perf_json">{{ performance_json | safe }}</script>
+{% endblock %}
+
+{% block extra_scripts %}<script src="/assets/performance-charts.js"></script>{% endblock %}

@@ -2,7 +2,7 @@
 # Runs inference on a schedule and writes tariff JSON.
 #
 # Scheduling (via entrypoint cron, Amsterdam / Europe/Amsterdam time):
-#   - 08:05 and 20:05 — full run: update-data → train → inference → export → site
+#   - 08:05, 14:30 and 20:05 — full run: update-data → train → inference → export → site
 #   - 12:00–16:00 every 15 min — price watcher: if new day-ahead prices detected,
 #     runs update-data → inference → export → site (no retrain)
 #
@@ -11,7 +11,7 @@
 #
 # Run:
 #   docker run -d --restart unless-stopped \
-#     -e ENTSOE=<key> -e ZONE=NL \
+#     -e ENTSOE=<key> -e ZONES=NL,DE_LU \
 #     -v $(pwd)/outputs:/outputs \
 #     runeflow:export
 
@@ -45,17 +45,22 @@ RUN mkdir -p /app/.cache/runeflow /var/log/runeflow /outputs
 
 # Entrypoints
 COPY docker/entrypoint-export.sh /entrypoint.sh
+COPY docker/entrypoint-archive.sh /entrypoint-archive.sh
 COPY docker/entrypoint-oneshot.sh /entrypoint-oneshot.sh
-RUN chmod +x /entrypoint.sh /entrypoint-oneshot.sh
+COPY docker/archive-status.html /app/archive-status.html
+RUN chmod +x /entrypoint.sh /entrypoint-archive.sh /entrypoint-oneshot.sh
 
 # Non-root user
 RUN useradd -m -s /bin/bash runeflow && \
     chown -R runeflow:runeflow /app /var/log/runeflow /outputs
 
 # Required env: ENTSOE
-# Optional env: ZONE (default: NL), PRICE_PROVIDER (default: wholesale),
-#               OUTPUT_FILE (default: /outputs/tariffs.json),
-#               CHECK_INTERVAL (default: 900), LOG_LEVEL (default: INFO)
+# Optional env: ZONES (default: all 47 zones, comma-separated list of zone codes),
+#               ZONE (deprecated, single-zone alias for ZONES),
+#               PRICE_PROVIDER (default: wholesale),
+#               OUTPUT_DIR (default: /outputs),
+#               SITE_OUTPUT_DIR (default: /outputs/site),
+#               LOG_LEVEL (default: INFO)
 
 VOLUME ["/outputs", "/app/.cache/runeflow"]
 

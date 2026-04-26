@@ -99,8 +99,14 @@ class UpdateDataService:
         end = date(years[-1], 12, 31)
         logger.info("Downloading historical weather (%d locations)", len(locations))
 
-        series = self._weather_port.download_historical(locations, start, end)
-        self._store.save_weather(series, zone)
+        # Skip if the store already has weather data covering the full range.
+        # The hourly weather-refresh cron will retry if data is missing/incomplete.
+        existing = self._store.load_weather(zone, start, end)
+        if existing is not None:
+            logger.info("Historical weather up-to-date for zone=%s, skipping download", zone)
+        else:
+            series = self._weather_port.download_historical(locations, start, end)
+            self._store.save_weather(series, zone)
 
         logger.info("Downloading weather forecast")
         forecast = self._weather_port.download_forecast(locations, horizon_days=9)

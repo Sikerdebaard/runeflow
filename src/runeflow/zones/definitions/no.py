@@ -75,6 +75,7 @@ NO_1 = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
         "temporal",
@@ -141,6 +142,7 @@ NO_2 = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
         "temporal",
@@ -208,6 +210,7 @@ NO_3 = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
         "temporal",
@@ -273,6 +276,7 @@ NO_4 = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
         "temporal",
@@ -333,6 +337,7 @@ NO_5 = ZoneConfig(
     ),
     has_energyzero=False,
     has_ned=False,
+    has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
         "temporal",

@@ -73,6 +73,16 @@ def configure_injector(
 
             price_adapters.append(EnergyZeroPriceAdapter())
 
+        if zone_cfg.has_awattar:
+            from runeflow.adapters.price.awattar import AwattarPriceAdapter
+
+            price_adapters.append(AwattarPriceAdapter())
+
+        if zone_cfg.has_nordpool:
+            from runeflow.adapters.price.nordpool_adapter import NordpoolPriceAdapter
+
+            price_adapters.append(NordpoolPriceAdapter())
+
         from runeflow.adapters.price.caching import CachingPriceAdapter
 
         binder.bind(PricePort, CachingPriceAdapter(FallbackPriceAdapter(price_adapters)))
@@ -89,6 +99,7 @@ def configure_injector(
             historical_api=config.openmeteo_historical_api,
             forecast_api=config.openmeteo_forecast_api,
             ensemble_api=config.openmeteo_ensemble_api,
+            http_cache_dir=str(config.openmeteo_http_cache_dir),
         )
         binder.bind(
             WeatherPort,

@@ -222,6 +222,7 @@ class TestUpdateDataService:
 
         store = MagicMock()
         store.load_prices.return_value = None  # No existing data
+        store.load_weather.return_value = None  # No existing weather data
 
         validator = MagicMock()
         val_result = MagicMock()

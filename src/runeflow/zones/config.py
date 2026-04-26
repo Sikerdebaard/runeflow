@@ -58,3 +58,10 @@ class ZoneConfig:
     # Training
     historical_years: tuple[int, ...]  # Years to download
     min_training_years: int = 2  # Minimum years required
+
+    # Additional adapter flags (default False for backward compat)
+    has_awattar: bool = False  # aWATTar fallback (DE, AT)?
+    has_nordpool: bool = False  # Nordpool fallback (Nordic/Baltic)?
+
+    # Disabled flag — if set, zone is excluded from active list_zones() output
+    disabled_reason: str | None = None  # Human-readable reason; None means active

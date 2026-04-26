@@ -112,6 +112,12 @@ class DataStore(ABC):
     @abstractmethod
     def load_latest_forecast(self, zone: str) -> ForecastResult | None: ...
 
+    @abstractmethod
+    def save_forecast_archive(self, result: ForecastResult) -> None: ...
+
+    @abstractmethod
+    def load_forecast_archive(self, zone: str, days_back: int = 30) -> list[ForecastResult]: ...
+
     # ── Warmup Cache ──────────────────────────────────────────────────────────
 
     @abstractmethod

@@ -419,20 +419,60 @@ ALL_ZONE_CODES = [
     "CY",
 ]
 
+# Zones that have no accessible price data source and are intentionally disabled.
+# They remain registered (ZoneRegistry.get() works) but are excluded from list_zones().
+DISABLED_ZONE_CODES = ["BA", "CY", "GB", "IE", "MT", "XK"]
+ACTIVE_ZONE_CODES = [z for z in ALL_ZONE_CODES if z not in DISABLED_ZONE_CODES]
+
 
 class TestZoneRegistryAllZones:
     def test_all_zone_codes_registered(self):
         zones = ZoneRegistry.list_zones()
-        missing = [z for z in ALL_ZONE_CODES if z not in zones]
+        missing = [z for z in ACTIVE_ZONE_CODES if z not in zones]
         assert missing == [], f"Zones not registered: {missing}"
 
     def test_list_zones_contains_all(self):
         zones = set(ZoneRegistry.list_zones())
-        assert set(ALL_ZONE_CODES) == zones
+        assert set(ACTIVE_ZONE_CODES) == zones
 
     def test_list_zones_sorted(self):
         zones = ZoneRegistry.list_zones()
         assert zones == sorted(zones)
+
+    def test_disabled_zones_not_in_list_zones(self):
+        zones = set(ZoneRegistry.list_zones())
+        for code in DISABLED_ZONE_CODES:
+            assert code not in zones, f"{code} should not appear in list_zones()"
+
+
+class TestDisabledZones:
+    def test_disabled_zones_still_gettable(self):
+        """Disabled zones are still registered and accessible via get()."""
+        for code in DISABLED_ZONE_CODES:
+            cfg = ZoneRegistry.get(code)
+            assert cfg.zone == code
+
+    def test_disabled_zones_have_reason(self):
+        for code in DISABLED_ZONE_CODES:
+            cfg = ZoneRegistry.get(code)
+            assert cfg.disabled_reason is not None
+            assert len(cfg.disabled_reason) > 10
+
+    def test_list_disabled_zones_returns_all(self):
+        disabled = dict(ZoneRegistry.list_disabled_zones())
+        for code in DISABLED_ZONE_CODES:
+            assert code in disabled
+            assert disabled[code] is not None
+
+    def test_list_disabled_zones_sorted(self):
+        disabled = ZoneRegistry.list_disabled_zones()
+        codes = [z for z, _ in disabled]
+        assert codes == sorted(codes)
+
+    def test_active_zones_have_no_disabled_reason(self):
+        for code in ACTIVE_ZONE_CODES:
+            cfg = ZoneRegistry.get(code)
+            assert cfg.disabled_reason is None, f"{code} unexpectedly has disabled_reason"
 
 
 @pytest.mark.parametrize("zone_code", ALL_ZONE_CODES)
