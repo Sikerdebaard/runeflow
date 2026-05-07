@@ -17,6 +17,7 @@ import inject
 from loguru import logger as _logger
 
 from runeflow.config import AppConfig
+from runeflow.ports.commodity import CommodityPricePort
 from runeflow.ports.generation import GenerationPort
 from runeflow.ports.price import PricePort
 from runeflow.ports.store import DataStore
@@ -127,6 +128,16 @@ def configure_injector(
                 binder.bind(
                     SupplementalDataPort, CachingSupplementalAdapter(NedAdapter(api_key=ned_key))
                 )
+
+        # ── Commodity price adapter (EIA — oil, gas, coal) ────────────────────
+        eia_key = env.get("EIA_KEY", config.eia_api_key)
+        if eia_key:
+            from runeflow.adapters.supplemental.commodity import EiaCommodityAdapter
+
+            binder.bind(
+                CommodityPricePort,
+                EiaCommodityAdapter(api_key=eia_key, cache_dir=config.commodity_cache_dir),
+            )
 
         # ── Validator ─────────────────────────────────────────────────────────
         from runeflow.validators.composite import default_validator

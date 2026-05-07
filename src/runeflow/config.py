@@ -56,6 +56,10 @@ class AppConfig(BaseSettings):
     # ── NED (NL supplemental data) ────────────────────────────────────────────
     ned_api_key: str = ""
 
+    # ── EIA (Global commodity prices — oil, gas, coal) ────────────────────────
+    # Free API key: https://www.eia.gov/opendata/
+    eia_api_key: str = ""
+
     # ── Open-Meteo API endpoints ──────────────────────────────────────────────
     # OPENMETEO_FORECAST_API — override just the deterministic forecast endpoint.
     #   This is the only endpoint that can realistically be self-hosted: ensemble
@@ -145,6 +149,11 @@ class AppConfig(BaseSettings):
     def forecasts_cache_dir(self) -> Path:
         return self.cache_dir / "forecasts"
 
+    @property
+    def commodity_cache_dir(self) -> Path:
+        """Directory for EIA commodity price Parquet year-cache files."""
+        return self.cache_dir / "commodity"
+
     def ensure_dirs(self) -> None:
         """Create all cache directories if they do not exist."""
         for d in [
@@ -155,6 +164,7 @@ class AppConfig(BaseSettings):
             self.generation_cache_dir,
             self.models_cache_dir,
             self.forecasts_cache_dir,
+            self.commodity_cache_dir,
         ]:
             d.mkdir(parents=True, exist_ok=True)
 
@@ -180,6 +190,7 @@ class AppConfig(BaseSettings):
         mapping = {
             "ENTSOE": "entsoe_api_key",
             "NED": "ned_api_key",
+            "EIA_KEY": "eia_api_key",
             "CACHE_DIR": "cache_dir",
             "LOG_LEVEL": "log_level",
         }

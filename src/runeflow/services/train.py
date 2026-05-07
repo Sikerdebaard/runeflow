@@ -168,6 +168,13 @@ class TrainService:
             supp.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
             df = df.join(supp, how="left")
 
+        # Commodity prices (oil, gas, coal)
+        commodity = self._store.load_supplemental(zone, "commodity")
+        if commodity is not None and not commodity.empty:
+            idx = pd.DatetimeIndex(commodity.index)
+            commodity.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+            df = df.join(commodity, how="left")
+
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]
         return df
