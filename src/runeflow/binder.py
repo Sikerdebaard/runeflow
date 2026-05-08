@@ -129,15 +129,13 @@ def configure_injector(
                     SupplementalDataPort, CachingSupplementalAdapter(NedAdapter(api_key=ned_key))
                 )
 
-        # ── Commodity price adapter (EIA — oil, gas, coal) ────────────────────
-        eia_key = env.get("EIA_KEY", config.eia_api_key)
-        if eia_key:
-            from runeflow.adapters.supplemental.commodity import EiaCommodityAdapter
+        # ── Commodity price adapter (World Bank — Brent, EU gas, coal) ──────────
+        from runeflow.adapters.supplemental.commodity import CommodityAdapter
 
-            binder.bind(
-                CommodityPricePort,
-                EiaCommodityAdapter(api_key=eia_key, cache_dir=config.commodity_cache_dir),
-            )
+        binder.bind(
+            CommodityPricePort,
+            CommodityAdapter(cache_dir=config.commodity_cache_dir),
+        )
 
         # ── Validator ─────────────────────────────────────────────────────────
         from runeflow.validators.composite import default_validator

@@ -55,6 +55,7 @@ NL = ZoneConfig(
     has_ned=True,
     tariff_formulas=NL_TARIFF_FORMULAS,
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",

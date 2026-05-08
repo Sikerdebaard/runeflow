@@ -4,12 +4,13 @@
 
 """Energy commodity price feature group — oil, natural gas, coal.
 
-Expects columns produced by :class:`~runeflow.adapters.supplemental.commodity.EiaCommodityAdapter`
+Expects columns produced by
+:class:`~runeflow.adapters.supplemental.commodity.CommodityAdapter`
 (joined upstream in the training/warmup assembly):
 
-* ``commodity_oil_usd_bbl``   — crude oil (WTI) in USD/barrel
-* ``commodity_gas_usd_mmbtu`` — natural gas (Henry Hub) in USD/MMBtu
-* ``commodity_coal_usd_t``    — coal in USD/short ton
+* ``commodity_brent_usd_bbl``   — Brent crude in USD/barrel (Yahoo Finance BZ=F)
+* ``commodity_gas_eu_eur_mwh``  — German/European gas spot price in €/MWh (Bundesnetzagentur)
+* ``commodity_coal_usd_t``      — thermal coal (FRED PCOALAUUSDM) in USD/mt
 
 All three columns are forward-filled to fill any hourly gaps left after
 frequency up-sampling.  The group then derives:
@@ -20,8 +21,8 @@ frequency up-sampling.  The group then derives:
 * gas-to-oil and coal-to-oil price ratios
 
 If none of the commodity columns are present the group returns the
-DataFrame unchanged — it is safe to include even when the EIA adapter
-is not configured.
+DataFrame unchanged — it is safe to include even when no commodity adapter
+is configured.
 """
 
 from __future__ import annotations
@@ -33,8 +34,8 @@ from runeflow.zones.config import ZoneConfig
 from .base import FeatureGroup
 
 _COMMODITY_COLS = (
-    "commodity_oil_usd_bbl",
-    "commodity_gas_usd_mmbtu",
+    "commodity_brent_usd_bbl",
+    "commodity_gas_eu_eur_mwh",
     "commodity_coal_usd_t",
 )
 
@@ -97,16 +98,16 @@ class CommodityPriceFeatures(FeatureGroup):
             df[f"{col}_pct_change_24h"] = (series - lagged) / (lagged.abs() + 1e-8)
 
         # --- Cross-commodity ratios -------------------------------------------
-        oil = df.get("commodity_oil_usd_bbl")
-        gas = df.get("commodity_gas_usd_mmbtu")
+        oil = df.get("commodity_brent_usd_bbl")
+        gas = df.get("commodity_gas_eu_eur_mwh")
         coal = df.get("commodity_coal_usd_t")
 
         if oil is not None and gas is not None:
+            # gas (€/MWh) / oil (USD/bbl) — different units, but the relative
+            # spread still captures fuel-switching pressure as a model signal
             df["commodity_gas_oil_ratio"] = gas / (oil + 1e-8)
 
         if oil is not None and coal is not None:
-            # Coal is per short ton; normalise by energy content proxy (barrel ~6 MMBtu)
-            # to give a dimensionally comparable ratio
-            df["commodity_coal_oil_ratio"] = coal / (oil * 6.0 + 1e-8)
+            df["commodity_coal_oil_ratio"] = coal / (oil + 1e-8)
 
         return df

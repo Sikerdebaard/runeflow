@@ -68,6 +68,7 @@ SE_1 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -137,6 +138,7 @@ SE_2 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -214,6 +216,7 @@ SE_3 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -290,6 +293,7 @@ SE_4 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",

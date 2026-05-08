@@ -79,7 +79,9 @@ class WarmupService:
         if commodity is not None and not commodity.empty:
             idx = pd.DatetimeIndex(commodity.index)
             commodity.index = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
-            df = df.join(commodity, how="left")
+            new_cols = [c for c in commodity.columns if c not in df.columns]
+            if new_cols:
+                df = df.join(commodity[new_cols], how="left")
 
         df.sort_index(inplace=True)
         df = df[~df.index.duplicated(keep="first")]

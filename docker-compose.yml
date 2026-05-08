@@ -16,7 +16,7 @@ services:
     # Pull pre-built image from GHCR in production.
     # Set in .env:  RUNEFLOW_IMAGE=ghcr.io/sikerdebaard/runeflow:latest
     # Falls back to the pre-built GHCR image when RUNEFLOW_IMAGE is not set.
-    image: ${RUNEFLOW_IMAGE:-ghcr.io/sikerdebaard/runeflow:latest}
+    # image: ${RUNEFLOW_IMAGE:-ghcr.io/sikerdebaard/runeflow:latest}
     build:
       context: .
       dockerfile: docker/Dockerfile.export

@@ -13,13 +13,13 @@ import pandas as pd
 
 
 class CommodityPricePort(ABC):
-    """Global energy commodity price source (oil, natural gas, coal).
+    """European energy commodity price source (oil, gas, coal).
 
     Implementations return an hourly-indexed DataFrame with columns:
 
-    * ``commodity_oil_usd_bbl``  — crude oil spot price (USD/barrel)
-    * ``commodity_gas_usd_mmbtu`` — natural gas price (USD/MMBtu)
-    * ``commodity_coal_usd_t``   — coal price (USD/metric ton)
+    * ``commodity_brent_usd_bbl``   — Brent crude spot price (USD/barrel)
+    * ``commodity_gas_eu_eur_mwh``  — German/European gas spot price (€/MWh)
+    * ``commodity_coal_usd_t``      — thermal coal benchmark (USD/metric ton)
 
     Missing observations are forward-filled by the adapter so that every
     hour has a value; the feature engineering layer adds further lag and

@@ -2,27 +2,31 @@
 # Copyright (C) 2024-2026 Thomas Phil — runeflow
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
-"""EiaCommodityAdapter — energy commodity prices via the EIA Open Data API v2.
+"""CommodityAdapter — European energy commodity prices, no API key required.
 
-Fetches three global energy commodity benchmarks:
+Three free data sources, each chosen for European energy market relevance:
 
-* **Crude oil (WTI)**   — monthly spot price, USD/barrel
-  Route: ``/v2/petroleum/pri/spt/data/``
-* **Natural gas (Henry Hub)** — monthly spot price, USD/MMBtu
-  Route: ``/v2/natural-gas/pri/sum/data/``
-* **Coal (Central Appalachian)** — quarterly spot price, USD/short ton
-  Route: ``/v2/coal/price/data/``
+* **European gas** — `Bundesnetzagentur <https://www.bundesnetzagentur.de>`_
+  daily German spot price (€/MWh).  The German gas benchmark closely tracks
+  TTF and serves as the proxy used by similar tools.
+  Column: ``commodity_gas_eu_eur_mwh``.
 
-All series are resampled to an hourly DatetimeIndex via forward-fill so
-that the result can be joined directly to the hourly electricity price
-DataFrame without frequency mismatch.
+* **Brent crude oil** — `Yahoo Finance <https://finance.yahoo.com>`_ ticker
+  ``BZ=F`` (ICE Brent Last Day futures), daily closing price in USD/bbl.
+  Falls back to the FRED ``DCOILBRENTEU`` daily series if Yahoo is
+  unavailable.  Column: ``commodity_brent_usd_bbl``.
+
+* **Thermal coal** — `FRED <https://fred.stlouisfed.org>`_ series
+  ``PCOALAUUSDM`` (Australian Newcastle benchmark, USD/mt), monthly
+  frequency, forward-filled to hourly.  No API key required.
+  Column: ``commodity_coal_usd_t``.
 
 Disk caching
 ------------
-Previous (complete) calendar years are persisted as Parquet files under
-``{cache_dir}/commodity/{year}.parquet``.  A completed year is never
-re-downloaded, which avoids large redundant API calls on repeated runs.
-The current year is always refreshed once per process (in-memory TTL).
+Completed calendar years are persisted as Parquet files under
+``{cache_dir}/{year}.parquet``.  A finished year is never re-downloaded.
+The current (in-progress) year is refreshed once per day via an in-memory
+TTL.
 """
 
 from __future__ import annotations
@@ -33,74 +37,45 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+import yfinance as yf  # type: ignore[import-untyped]
 from loguru import logger
 
-from runeflow.exceptions import AuthenticationError, DownloadError
 from runeflow.ports.commodity import CommodityPricePort
 
-_BASE_URL = "https://api.eia.gov/v2"
+# ── Source URLs ───────────────────────────────────────────────────────────────
 
-# --- EIA v2 route configuration -------------------------------------------
-# Each entry: (route, frequency, facet_key, facet_value, value_column,
-#              output_column, unit_label)
-_COMMODITY_SPECS: list[tuple[str, str, str, str, str, str]] = [
-    (
-        "petroleum/pri/spt/data",
-        "monthly",
-        "product",
-        "EPC0",
-        "commodity_oil_usd_bbl",
-        "$/barrel",
-    ),
-    (
-        "natural-gas/pri/sum/data",
-        "monthly",
-        "series",
-        "RNGWHHD",
-        "commodity_gas_usd_mmbtu",
-        "$/MMBtu",
-    ),
-    (
-        "coal/price/data",
-        "quarterly",
-        "series",
-        "COAL2",
-        "commodity_coal_usd_t",
-        "$/short ton",
-    ),
-]
+# Bundesnetzagentur JSON chart endpoint (German daily gas spot price, €/MWh)
+_BUND_URL = "https://www.bundesnetzagentur.de/_tools/SVG/js2/_functions/json.html"
+_BUND_GAS_ID = "870302"
 
-# Second-priority coal series if COAL2 returns empty (it was retired 2016).
-_COAL_FALLBACK_SERIES = "COAL3"
+# Yahoo Finance ticker for ICE Brent Last Day futures (USD/bbl, daily)
+_BRENT_TICKER = "BZ=F"
+
+# FRED no-key CSV endpoint — fallback for Brent and primary source for coal
+_FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+_FRED_BRENT_SERIES = "DCOILBRENTEU"  # USD/bbl, daily
+_FRED_COAL_SERIES = "PCOALAUUSDM"  # USD/metric ton, monthly
 
 # TTL for the current-year in-memory cache (seconds).
 _CURRENT_YEAR_TTL = 86_400  # 24 hours
 
 
-class EiaCommodityAdapter(CommodityPricePort):
-    """Fetch oil, natural gas and coal prices from EIA Open Data API v2.
+class CommodityAdapter(CommodityPricePort):
+    """Fetch European energy commodity prices from three free public sources.
+
+    * Gas  → Bundesnetzagentur daily German spot price (€/MWh)
+    * Brent → Yahoo Finance ``BZ=F`` daily (USD/bbl) with FRED fallback
+    * Coal  → FRED ``PCOALAUUSDM`` monthly (USD/mt) — no API key required
 
     Parameters
     ----------
-    api_key:
-        EIA API key (free registration at https://www.eia.gov/opendata/).
     cache_dir:
         Directory where completed-year Parquet files will be stored.
-        Typically ``AppConfig.commodity_cache_dir``.
     """
 
-    def __init__(self, api_key: str, cache_dir: Path) -> None:
-        if not api_key:
-            raise AuthenticationError(
-                "EIA API key is required.  "
-                "Register for free at https://www.eia.gov/opendata/ "
-                "and set the EIA_KEY environment variable."
-            )
-        self._api_key = api_key
+    def __init__(self, cache_dir: Path) -> None:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
-
-        # In-memory TTL for current-year data
         self._mem_cache: dict[int, tuple[pd.DataFrame, float]] = {}
 
     # ── CommodityPricePort interface ──────────────────────────────────────────
@@ -112,20 +87,13 @@ class EiaCommodityAdapter(CommodityPricePort):
     ) -> pd.DataFrame | None:
         """Return hourly forward-filled commodity prices for *start*–*end*."""
         years = list(range(start.year, end.year + 1))
-        frames: list[pd.DataFrame] = []
-
-        for year in years:
-            df_year = self._get_year(year)
-            if df_year is not None and not df_year.empty:
-                frames.append(df_year)
-
+        frames = [f for y in years if (f := self._get_year(y)) is not None and not f.empty]
         if not frames:
             return None
 
         df = pd.concat(frames).sort_index()
         df = df[~df.index.duplicated(keep="first")]
 
-        # Crop to requested range (hourly boundaries)
         start_ts = pd.Timestamp(start, tz="UTC")
         end_ts = pd.Timestamp(end, tz="UTC") + pd.Timedelta(hours=23)
         df = df.loc[start_ts:end_ts]
@@ -134,39 +102,34 @@ class EiaCommodityAdapter(CommodityPricePort):
     def download_latest(self) -> pd.DataFrame | None:
         """Return rolling 12-month commodity prices ending today."""
         today = datetime.date.today()
-        start = today.replace(year=today.year - 1)
-        return self.download(start, today)
+        return self.download(today.replace(year=today.year - 1), today)
 
-    # ── Internal helpers ──────────────────────────────────────────────────────
+    # ── Year-level caching ────────────────────────────────────────────────────
 
     def _year_cache_path(self, year: int) -> Path:
         return self._cache_dir / f"{year}.parquet"
 
     def _get_year(self, year: int) -> pd.DataFrame | None:
-        """Return hourly commodity DataFrame for *year*, using disk/mem cache."""
         today = datetime.date.today()
-        is_complete_year = year < today.year
+        is_complete = year < today.year
 
-        # --- Disk cache for completed years ----------------------------------
         path = self._year_cache_path(year)
-        if is_complete_year and path.exists():
+        if is_complete and path.exists():
             try:
                 return pd.read_parquet(path)
             except Exception as exc:
                 logger.warning("Commodity disk-cache read failed for %d: %s", year, exc)
 
-        # --- In-memory TTL for current year ----------------------------------
-        if not is_complete_year and year in self._mem_cache:
+        if not is_complete and year in self._mem_cache:
             df_cached, expires = self._mem_cache[year]
             if time.monotonic() < expires:
                 return df_cached
 
-        # --- Fetch from EIA --------------------------------------------------
         df = self._fetch_year(year)
         if df is None or df.empty:
             return None
 
-        if is_complete_year:
+        if is_complete:
             try:
                 df.to_parquet(path, compression="snappy")
                 logger.debug("Commodity disk-cache saved for year %d", year)
@@ -178,112 +141,169 @@ class EiaCommodityAdapter(CommodityPricePort):
         return df
 
     def _fetch_year(self, year: int) -> pd.DataFrame | None:
-        """Download all three commodities for *year* and return hourly frame."""
-        start_str = f"{year}-01-01"
-        end_str = f"{year}-12-31"
+        today = datetime.date.today()
+        y_start = datetime.date(year, 1, 1)
+        y_end = min(datetime.date(year, 12, 31), today)
 
-        series_frames: dict[str, pd.Series] = {}
-        for route, frequency, facet_key, facet_value, out_col, _unit in _COMMODITY_SPECS:
-            raw = self._fetch_series(route, frequency, facet_key, facet_value, start_str, end_str)
+        series: dict[str, pd.Series] = {}
 
-            # Coal fallback: COAL2 was retired in 2016
-            if raw is None and out_col == "commodity_coal_usd_t":
-                raw = self._fetch_series(
-                    route, frequency, facet_key, _COAL_FALLBACK_SERIES, start_str, end_str
-                )
+        gas = self._fetch_gas(y_start, y_end)
+        if gas is not None and not gas.empty:
+            series["commodity_gas_eu_eur_mwh"] = gas
+        else:
+            logger.debug("No Bundesnetzagentur gas data for %d", year)
 
-            if raw is not None and not raw.empty:
-                series_frames[out_col] = raw
-            else:
-                logger.debug("No EIA data for %s in %d — column will be NaN", out_col, year)
+        brent = self._fetch_brent_yahoo(y_start, y_end)
+        if brent is None or brent.empty:
+            logger.debug("Yahoo Brent empty for %d — trying FRED fallback", year)
+            brent = self._fetch_brent_fred(y_start, y_end)
+        if brent is not None and not brent.empty:
+            series["commodity_brent_usd_bbl"] = brent
+        else:
+            logger.debug("No Brent data for %d", year)
 
-        if not series_frames:
+        coal = self._fetch_coal_fred(y_start, y_end)
+        if coal is not None and not coal.empty:
+            series["commodity_coal_usd_t"] = coal
+        else:
+            logger.debug("No FRED coal data for %d", year)
+
+        if not series:
             return None
 
-        df = pd.DataFrame(series_frames)
-
-        # Resample to hourly UTC and forward-fill within the year
+        df = pd.DataFrame(series)
         hourly_idx = pd.date_range(
             start=f"{year}-01-01",
             end=f"{year}-12-31 23:00:00",
             freq="h",
             tz="UTC",
         )
-        df = df.reindex(hourly_idx).ffill()
+        df = df.reindex(hourly_idx).ffill().bfill()
         return df
 
-    def _fetch_series(
-        self,
-        route: str,
-        frequency: str,
-        facet_key: str,
-        facet_value: str,
-        start: str,
-        end: str,
-    ) -> pd.Series | None:
-        """Call EIA v2 API and return a UTC-indexed Series of float values."""
-        url = f"{_BASE_URL}/{route}/"
-        params: dict[str, str] = {
-            "frequency": frequency,
-            "data[0]": "value",
-            f"facets[{facet_key}][]": facet_value,
-            "sort[0][column]": "period",
-            "sort[0][direction]": "asc",
-            "offset": "0",
-            "length": "5000",
-            "start": start,
-            "end": end,
-            "api_key": self._api_key,
+    # ── Per-source fetch helpers ──────────────────────────────────────────────
+
+    def _fetch_gas(self, start: datetime.date, end: datetime.date) -> pd.Series | None:
+        """Fetch daily German gas spot price from Bundesnetzagentur (€/MWh)."""
+        # Add a small buffer so the last day is always included
+        qend = end + datetime.timedelta(days=5)
+        params = {
+            "view": "json",
+            "id": _BUND_GAS_ID,
+            "xMin": start.strftime("%d.%m.%Y"),
+            "xMax": qend.strftime("%d.%m.%Y"),
+            "singleType": "1",
         }
         try:
-            resp = requests.get(url, params=params, timeout=30)
-            if resp.status_code == 403:
-                raise AuthenticationError("EIA API key rejected (HTTP 403).")
+            resp = requests.get(
+                _BUND_URL,
+                params=params,
+                timeout=30,
+                headers={"accept": "application/json"},
+            )
             resp.raise_for_status()
-            payload = resp.json()
-        except requests.RequestException as exc:
-            raise DownloadError(f"EIA request failed ({route}): {exc}") from exc
-
-        records = payload.get("response", {}).get("data", [])
-        if not records:
+            data = resp.json()
+        except Exception as exc:
+            logger.warning("Bundesnetzagentur gas request failed: %s", exc)
             return None
 
-        rows: list[tuple[pd.Timestamp, float]] = []
-        for rec in records:
-            period = rec.get("period", "")
-            value = rec.get("value")
-            if value is None:
+        try:
+            timestamps = data["labels"]
+            prices = data["datasets"][1]["data"]
+        except (KeyError, IndexError) as exc:
+            logger.warning("Bundesnetzagentur response parse error: %s", exc)
+            return None
+
+        rows: dict[pd.Timestamp, float] = {}
+        for t, p in zip(timestamps, prices, strict=False):
+            if not isinstance(p, (int, float)):
                 continue
             try:
-                ts = _parse_eia_period(period, frequency)
-                rows.append((ts, float(value)))
-            except (ValueError, KeyError):
+                dt = datetime.datetime.strptime(t, "%d.%m.%Y")
+                rows[pd.Timestamp(dt, tz="UTC")] = float(p)
+            except ValueError:
                 continue
 
         if not rows:
             return None
 
-        idx, vals = zip(*rows, strict=False)
-        return pd.Series(vals, index=pd.DatetimeIndex(idx, tz="UTC"), name=facet_value, dtype=float)
+        return pd.Series(rows, dtype=float, name="commodity_gas_eu_eur_mwh").sort_index()
 
+    def _fetch_brent_yahoo(self, start: datetime.date, end: datetime.date) -> pd.Series | None:
+        """Fetch daily Brent closing price from Yahoo Finance (BZ=F, USD/bbl)."""
+        try:
+            raw = yf.download(
+                _BRENT_TICKER,
+                start=start.isoformat(),
+                # yfinance end is exclusive
+                end=(end + datetime.timedelta(days=1)).isoformat(),
+                progress=False,
+                auto_adjust=True,
+            )
+        except Exception as exc:
+            logger.warning("Yahoo Finance Brent request failed: %s", exc)
+            return None
 
-def _parse_eia_period(period: str, frequency: str) -> pd.Timestamp:
-    """Convert an EIA period string to a UTC Timestamp at period start.
+        if raw is None or raw.empty:
+            return None
 
-    EIA formats:
-    * monthly  → ``"2023-01"``
-    * quarterly → ``"2023-Q1"``
-    * annual   → ``"2023"``
-    * daily    → ``"2023-01-15"``
-    """
-    if frequency == "monthly":
-        return pd.Timestamp(f"{period}-01", tz="UTC")
-    if frequency == "quarterly":
-        # e.g. "2023-Q1" → 2023-01-01, "2023-Q2" → 2023-04-01
-        year, q = period.split("-Q")
-        month = (int(q) - 1) * 3 + 1
-        return pd.Timestamp(f"{year}-{month:02d}-01", tz="UTC")
-    if frequency == "annual":
-        return pd.Timestamp(f"{period}-01-01", tz="UTC")
-    # daily or unknown: attempt ISO parse
-    return pd.Timestamp(period, tz="UTC")
+        # yfinance >= 0.2 may return MultiIndex columns when downloading one ticker
+        close = raw["Close"].squeeze() if isinstance(raw.columns, pd.MultiIndex) else raw["Close"]
+
+        close = close.dropna()
+        if close.empty:
+            return None
+
+        if close.index.tz is None:
+            close.index = close.index.tz_localize("UTC")
+        else:
+            close.index = close.index.tz_convert("UTC")
+
+        return pd.Series(close, dtype=float, name="commodity_brent_usd_bbl")
+
+    def _fetch_brent_fred(self, start: datetime.date, end: datetime.date) -> pd.Series | None:
+        """Fetch daily Brent crude from FRED DCOILBRENTEU (USD/bbl, no API key)."""
+        return self._fetch_fred_csv(_FRED_BRENT_SERIES, start, end, "commodity_brent_usd_bbl")
+
+    def _fetch_coal_fred(self, start: datetime.date, end: datetime.date) -> pd.Series | None:
+        """Fetch monthly Australian thermal coal from FRED PCOALAUUSDM (USD/mt).
+
+        Monthly data is fetched with one extra month of lead-in so the
+        hourly forward-fill covers the full year from the first hour.
+        """
+        # Pull from one month before the year start so ffill has a seed value
+        lead_start = (datetime.date(start.year, 1, 1) - datetime.timedelta(days=32)).replace(day=1)
+        return self._fetch_fred_csv(_FRED_COAL_SERIES, lead_start, end, "commodity_coal_usd_t")
+
+    def _fetch_fred_csv(
+        self,
+        series_id: str,
+        start: datetime.date,
+        end: datetime.date,
+        col_name: str,
+    ) -> pd.Series | None:
+        """Download a FRED series via the no-key public CSV endpoint."""
+        try:
+            resp = requests.get(_FRED_CSV_URL, params={"id": series_id}, timeout=30)
+            resp.raise_for_status()
+        except Exception as exc:
+            logger.warning("FRED %s request failed: %s", series_id, exc)
+            return None
+
+        rows: dict[pd.Timestamp, float] = {}
+        for line in resp.text.strip().splitlines()[1:]:  # skip header
+            parts = line.split(",")
+            if len(parts) < 2:
+                continue
+            try:
+                dt = datetime.date.fromisoformat(parts[0])
+                val = float(parts[1])
+            except ValueError:
+                continue
+            if start <= dt <= end:
+                rows[pd.Timestamp(dt, tz="UTC")] = val
+
+        if not rows:
+            return None
+
+        return pd.Series(rows, dtype=float, name=col_name).sort_index()

@@ -47,6 +47,7 @@ BG = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
