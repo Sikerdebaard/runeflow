@@ -216,7 +216,7 @@ class CommodityAdapter(CommodityPricePort):
 
         rows: dict[pd.Timestamp, float] = {}
         for t, p in zip(timestamps, prices, strict=False):
-            if not isinstance(p, (int, float)):
+            if not isinstance(p, int | float):
                 continue
             try:
                 dt = datetime.datetime.strptime(t, "%d.%m.%Y")
