@@ -145,6 +145,11 @@ class AppConfig(BaseSettings):
     def forecasts_cache_dir(self) -> Path:
         return self.cache_dir / "forecasts"
 
+    @property
+    def commodity_cache_dir(self) -> Path:
+        """Directory for World Bank commodity price Parquet year-cache files."""
+        return self.cache_dir / "commodity"
+
     def ensure_dirs(self) -> None:
         """Create all cache directories if they do not exist."""
         for d in [
@@ -155,6 +160,7 @@ class AppConfig(BaseSettings):
             self.generation_cache_dir,
             self.models_cache_dir,
             self.forecasts_cache_dir,
+            self.commodity_cache_dir,
         ]:
             d.mkdir(parents=True, exist_ok=True)
 

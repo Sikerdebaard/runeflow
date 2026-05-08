@@ -10,6 +10,7 @@ from runeflow.zones.config import ZoneConfig
 
 from .base import FeatureGroup, FeaturePipeline
 from .cloud import CloudRadiationFeatures
+from .commodity import CommodityPriceFeatures
 from .cross_border import CrossBorderFeatures
 from .duck_curve import DuckCurveFeatures
 from .generation import GenerationForecastFeatures
@@ -29,6 +30,7 @@ from .wind import WindFeatures
 
 # Registry maps group name → class (singleton instances created on demand)
 FEATURE_REGISTRY: dict[str, type[FeatureGroup]] = {
+    "commodity": CommodityPriceFeatures,
     "temporal": TemporalFeatures,
     "solar_position": SolarPositionFeatures,
     "solar_power": SolarPowerFeatures,
@@ -52,6 +54,7 @@ FEATURE_REGISTRY: dict[str, type[FeatureGroup]] = {
 
 # Canonical execution order (dependencies respected)
 DEFAULT_ORDER = [
+    "commodity",
     "temporal",
     "solar_position",
     "solar_power",

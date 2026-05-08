@@ -50,6 +50,7 @@ EE = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -109,6 +110,7 @@ LV = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -169,6 +171,7 @@ LT = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",

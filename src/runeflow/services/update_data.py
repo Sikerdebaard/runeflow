@@ -16,6 +16,7 @@ from datetime import date
 import inject
 import pandas as pd
 
+from runeflow.ports.commodity import CommodityPricePort
 from runeflow.ports.generation import GenerationPort
 from runeflow.ports.price import PricePort
 from runeflow.ports.store import DataStore
@@ -55,6 +56,10 @@ class UpdateDataService:
             )  # type: ignore[assignment]
         except Exception:
             self._supplemental_port = None
+        try:
+            self._commodity_port: CommodityPricePort | None = inject.instance(CommodityPricePort)  # type: ignore[assignment]
+        except Exception:
+            self._commodity_port = None
 
     # ------------------------------------------------------------------
     def run(self, years: tuple[int, ...] | None = None) -> None:
@@ -67,6 +72,7 @@ class UpdateDataService:
         self._update_weather(zone, year_list)
         self._update_generation(zone, year_list)
         self._update_supplemental(zone, year_list)
+        self._update_commodity(zone, year_list)
         logger.info("UpdateData complete for zone=%s", zone)
 
     # ------------------------------------------------------------------
@@ -145,3 +151,14 @@ class UpdateDataService:
         forecast_df = self._supplemental_port.download_forecast(zone)
         if forecast_df is not None and not forecast_df.empty:
             self._store.save_supplemental(forecast_df, zone, "forecast")
+
+    # ------------------------------------------------------------------
+    def _update_commodity(self, zone: str, years: list[int]) -> None:
+        if self._commodity_port is None:
+            return
+        start = pd.Timestamp(f"{years[0]}-01-01", tz="UTC").date()
+        end = pd.Timestamp(f"{years[-1]}-12-31", tz="UTC").date()
+        logger.info("Downloading commodity price data (oil, gas, coal)")
+        df = self._commodity_port.download(start, end)
+        if df is not None and not df.empty:
+            self._store.save_supplemental(df, zone, "commodity")

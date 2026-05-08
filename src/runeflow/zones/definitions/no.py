@@ -78,6 +78,7 @@ NO_1 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -145,6 +146,7 @@ NO_2 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -213,6 +215,7 @@ NO_3 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -279,6 +282,7 @@ NO_4 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -340,6 +344,7 @@ NO_5 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",

@@ -17,6 +17,7 @@ import inject
 from loguru import logger as _logger
 
 from runeflow.config import AppConfig
+from runeflow.ports.commodity import CommodityPricePort
 from runeflow.ports.generation import GenerationPort
 from runeflow.ports.price import PricePort
 from runeflow.ports.store import DataStore
@@ -127,6 +128,14 @@ def configure_injector(
                 binder.bind(
                     SupplementalDataPort, CachingSupplementalAdapter(NedAdapter(api_key=ned_key))
                 )
+
+        # ── Commodity price adapter (World Bank — Brent, EU gas, coal) ──────────
+        from runeflow.adapters.supplemental.commodity import CommodityAdapter
+
+        binder.bind(
+            CommodityPricePort,
+            CommodityAdapter(cache_dir=config.commodity_cache_dir),
+        )
 
         # ── Validator ─────────────────────────────────────────────────────────
         from runeflow.validators.composite import default_validator
