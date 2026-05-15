@@ -38,6 +38,7 @@ dependencies = [
     # Dashboard templating
     "jinja2>=3.1",
     "nordpool>=0.5",
+    "yfinance>=0.2",
 ]
 
 [project.optional-dependencies]

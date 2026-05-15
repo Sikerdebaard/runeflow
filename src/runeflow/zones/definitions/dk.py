@@ -59,6 +59,7 @@ DK_1 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -119,6 +120,7 @@ DK_2 = ZoneConfig(
     has_nordpool=True,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",

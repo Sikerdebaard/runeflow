@@ -22,7 +22,18 @@ class SolarPositionFeatures(FeatureGroup):
 
     @property
     def produces(self) -> tuple[str, ...]:
-        return ("solar_zenith", "solar_azimuth", "solar_elevation", "clear_sky_ghi")
+        return (
+            "solar_zenith",
+            "solar_azimuth",
+            "solar_elevation",
+            "clear_sky_ghi",
+            "sunrise_hour",
+            "sunset_hour",
+            "solar_day_length",
+            "hours_since_sunrise",
+            "hours_until_sunset",
+            "hours_before_sunrise",
+        )
 
     def transform(self, df: pd.DataFrame, zone_cfg: ZoneConfig) -> pd.DataFrame:
         df = self._copy(df)
@@ -47,6 +58,50 @@ class SolarPositionFeatures(FeatureGroup):
 
         cos_zenith = np.cos(np.radians(solar_pos["zenith"])).clip(lower=0)
         df["clear_sky_ghi"] = 1000.0 * cos_zenith
+
+        # ── Sunrise / sunset / day-length features ────────────────────────────
+        try:
+            dti = pd.DatetimeIndex(df.index)
+            idx_utc = dti if dti.tz is not None else dti.tz_localize("UTC")
+            unique_dates = pd.DatetimeIndex(idx_utc.normalize().unique())
+            site = pvlib.location.Location(latitude=loc.lat, longitude=loc.lon, tz="UTC")
+            sun_info = site.get_sun_rise_set_transit(unique_dates, method="spa")
+
+            sunrise_map = sun_info["sunrise"].to_dict()
+            sunset_map = sun_info["sunset"].to_dict()
+            date_norm = pd.DatetimeIndex(idx_utc).normalize()
+
+            sunrise_s = pd.Series(
+                pd.DatetimeIndex([sunrise_map.get(d) for d in date_norm], tz="UTC"),
+                index=df.index,
+            )
+            sunset_s = pd.Series(
+                pd.DatetimeIndex([sunset_map.get(d) for d in date_norm], tz="UTC"),
+                index=df.index,
+            )
+            idx_s = pd.Series(idx_utc, index=df.index)
+
+            df["hours_since_sunrise"] = (
+                ((idx_s - sunrise_s).dt.total_seconds() / 3600.0).clip(lower=0).fillna(0)
+            )
+
+            df["hours_until_sunset"] = (
+                ((sunset_s - idx_s).dt.total_seconds() / 3600.0).clip(lower=0).fillna(0)
+            )
+
+            df["hours_before_sunrise"] = (
+                ((sunrise_s - idx_s).dt.total_seconds() / 3600.0).clip(lower=0).fillna(0)
+            )
+
+            df["solar_day_length"] = (
+                ((sunset_s - sunrise_s).dt.total_seconds() / 3600.0).clip(lower=0).fillna(0)
+            )
+
+            df["sunrise_hour"] = (sunrise_s.dt.hour + sunrise_s.dt.minute / 60.0).fillna(6.0)
+            df["sunset_hour"] = (sunset_s.dt.hour + sunset_s.dt.minute / 60.0).fillna(18.0)
+        except Exception:
+            # Graceful degradation — solar position still succeeds without these
+            pass
 
         return df
 
@@ -74,6 +129,7 @@ class SolarPowerFeatures(FeatureGroup):
             "direct_diffuse_ratio",
             "solar_output_12h",
             "is_sunny_period",
+            "is_solar_cliff",
         )
 
     def transform(self, df: pd.DataFrame, zone_cfg: ZoneConfig) -> pd.DataFrame:
@@ -137,5 +193,20 @@ class SolarPowerFeatures(FeatureGroup):
             df["solar_output_12h"]
             > df["solar_output_12h"].shift(1).rolling(168, min_periods=72).quantile(0.75)
         ).astype(int)
+
+        # is_solar_cliff: steep ramp-down window during the final 0.5–3.5 h before sunset.
+        # Uses hours_until_sunset when available (produced by SolarPositionFeatures),
+        # otherwise falls back to a fixed evening hour window.
+        if "hours_until_sunset" in df.columns:
+            cliff_window = df["hours_until_sunset"].between(0.5, 3.5)
+            ramp_threshold = df["solar_ramp_down"].rolling(168, min_periods=48).quantile(0.5)
+            df["is_solar_cliff"] = (cliff_window & (df["solar_ramp_down"] > ramp_threshold)).astype(
+                int
+            )
+        else:
+            df["is_solar_cliff"] = (
+                df.index.hour.isin([15, 16, 17, 18, 19])  # type: ignore[attr-defined]
+                & (df["solar_ramp_down"] > 0)
+            ).astype(int)
 
         return df

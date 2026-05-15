@@ -4,6 +4,7 @@
 
 """Supplemental adapter package."""
 
+from runeflow.adapters.supplemental.commodity import CommodityAdapter
 from runeflow.adapters.supplemental.ned import NedAdapter
 
-__all__ = ["NedAdapter"]
+__all__ = ["CommodityAdapter", "NedAdapter"]

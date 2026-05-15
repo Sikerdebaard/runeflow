@@ -67,6 +67,7 @@ RS = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -125,6 +126,7 @@ BA = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -187,6 +189,7 @@ ME = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -250,6 +253,7 @@ MK = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -305,6 +309,7 @@ XK = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",

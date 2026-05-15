@@ -69,6 +69,7 @@ IT_NORD = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -127,6 +128,7 @@ IT_CNOR = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -183,6 +185,7 @@ IT_CSUD = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -241,6 +244,7 @@ IT_SUD = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -292,6 +296,7 @@ IT_SICI = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
@@ -343,6 +348,7 @@ IT_SARD = ZoneConfig(
     has_ned=False,
     tariff_formulas={"wholesale": WHOLESALE_FORMULA},
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",

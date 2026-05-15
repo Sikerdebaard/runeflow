@@ -49,6 +49,7 @@ DE_LU = ZoneConfig(
     has_awattar=True,
     tariff_formulas=DE_TARIFF_FORMULAS,
     feature_groups=(
+        "commodity",
         "temporal",
         "solar_position",
         "solar_power",
