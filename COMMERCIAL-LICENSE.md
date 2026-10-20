@@ -31,7 +31,7 @@ You **must** obtain a commercial license if you intend to:
 
 ## Pricing
 
-Commercial license pricing is based on usage tier and deployment scope.  
+Commercial license pricing is based on usage tier and deployment scope.
 Contact **licensing@runeflow.dev** (or open a GitHub issue tagged
 `commercial-license`) for a quote.
 
@@ -46,7 +46,7 @@ Contact **licensing@runeflow.dev** (or open a GitHub issue tagged
 
 For enquiries about commercial licensing, please reach out:
 
-- **Email:** licensing@runeflow.dev
+- **Email:** sikerdebaard+runeflow@gmail.com
 - **GitHub Issues:** tag your issue with `commercial-license`
 
 ---

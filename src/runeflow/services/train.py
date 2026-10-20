@@ -9,6 +9,7 @@ TrainService — assembles training data and fits the ensemble.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -55,6 +56,12 @@ class TrainService:
         df = self._assemble_training_frame(zone)
         df, features = self._engineer_and_select_features(df)
 
+        logger.info(
+            "Training bundle: %d features active; regime flags=%s",
+            len(features),
+            self._summarize_feature_flags(),
+        )
+
         X = df[features]
         y = df[TARGET_COLUMN]
 
@@ -65,6 +72,12 @@ class TrainService:
 
         # Recent-years sample weight (double-weight last 2 years)
         sample_weight = self._compute_sample_weights(y_train)
+        logger.info(
+            "Training recency weighting enabled: half-life=%s days, "
+            "recent-window boost=%sx, regime-shift emphasis active",
+            120,
+            5.0,
+        )
 
         # Impute NaN features
         imputer = SimpleImputer(strategy="mean")
@@ -205,17 +218,60 @@ class TrainService:
         return df, features
 
     @staticmethod
-    def _compute_sample_weights(y_train: pd.Series) -> pd.Series:
-        """Exponential-decay recency weighting (half-life 180 days).
+    def _summarize_feature_flags() -> str:
+        flag_names = {
+            "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": "cyclical_temporal",
+            "RUNEFLOW_ENABLE_SPREAD_FEATURES": "spread_features",
+            "RUNEFLOW_ENABLE_DIESEL_CRACK": "diesel_crack",
+            "RUNEFLOW_ENABLE_MARKET_STRESS": "market_stress",
+            "RUNEFLOW_ENABLE_DATACENTER_PROXY": "datacenter_proxy",
+        }
+        enabled = [
+            label
+            for key, label in flag_names.items()
+            if os.getenv(key, "0")
+            not in {
+                "0",
+                "false",
+                "False",
+                "off",
+                "OFF",
+            }
+        ]
+        return ", ".join(enabled) if enabled else "none"
 
-        Matches the original runeflow weighting scheme so that older,
-        lower-price data is down-weighted relative to more recent market
-        conditions.  Weights are normalised so their mean ≈ 1.
+    @staticmethod
+    def _compute_sample_weights(y_train: pd.Series) -> pd.Series:
+        """Recent-regime weighting with a strong emphasis on the last 30 days.
+
+        The market shift is recent and structural, so the training distribution
+        needs to react to both recency and the intensity of the current regime.
+        We keep the long-horizon decay, apply a strong recent-window multiplier,
+        and add a stress multiplier that lifts the most elevated recent periods
+        even further without losing historical stability.
         """
-        HALF_LIFE_DAYS = 180
+        HALF_LIFE_DAYS = 120
+        RECENT_WINDOW_DAYS = 30
+        RECENT_BOOST = 5.0
+        STRESS_BOOST = 1.5
+
         latest_ts = y_train.index.max()
         days_ago = (latest_ts - y_train.index).total_seconds().to_numpy() / 86_400
-        weights = np.exp(-np.log(2) * days_ago / HALF_LIFE_DAYS)
+
+        base = np.exp(-np.log(2) * days_ago / HALF_LIFE_DAYS)
+        recent_mask = (days_ago <= RECENT_WINDOW_DAYS).astype(float)
+
+        # Stress-sensitive weighting: the recent window is amplified more when the
+        # target is elevated relative to the historical median, which helps the
+        # model react to the latest fuel / load / volatility regime.
+        target = y_train.to_numpy(dtype=float)
+        median = np.median(target)
+        spread = np.std(target, ddof=0)
+        spread = np.where(spread > 0, spread, 1.0)
+        stress_signal = np.clip((target - median) / spread, 0.0, 4.0)
+        stress_multiplier = 1.0 + STRESS_BOOST * recent_mask * stress_signal
+
+        weights = base * (1.0 + (RECENT_BOOST - 1.0) * recent_mask) * stress_multiplier
         weights = weights / weights.mean()  # normalise mean → 1
         return pd.Series(weights, index=y_train.index, name="sample_weight")
 

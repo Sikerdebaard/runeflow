@@ -94,6 +94,13 @@ class TestTemporalFeatures:
         overlap = (out["is_peak_hour"] == 1) & (out["is_overnight"] == 1)
         assert not overlap.any()
 
+    def test_cyclical_columns_present_and_bounded(self, zone_cfg_nl):
+        df = _make_df()
+        out = TemporalFeatures().transform(df, zone_cfg_nl)
+        for col in ("hour_sin", "hour_cos", "dow_sin", "dow_cos", "doy_sin", "doy_cos"):
+            assert col in out.columns
+            assert out[col].between(-1.000001, 1.000001).all()
+
 
 # ── PriceLagFeatures ─────────────────────────────────────────────────────────
 
@@ -388,6 +395,19 @@ class TestGenerationForecastFeatures:
         cols_before = set(df.columns)
         GenerationForecastFeatures().transform(df, zone_cfg_nl)
         assert set(df.columns) == cols_before
+
+    def test_baseload_and_datacenter_features(self, zone_cfg_nl):
+        from runeflow.features.generation import GenerationForecastFeatures
+
+        n = 24 * 40
+        df = _make_df(n)
+        df["load_forecast_mw"] = 12_000 + np.linspace(0, 500, n)
+        out = GenerationForecastFeatures().transform(df, zone_cfg_nl)
+
+        assert "baseload_min_rolling" in out.columns
+        assert "baseload_trend_30d" in out.columns
+        assert "baseload_trend_90d" in out.columns
+        assert "datacenter_pressure_proxy" in out.columns
 
 
 # ── CrossBorderFeatures ──────────────────────────────────────────────────────
@@ -803,6 +823,73 @@ class TestInteractionEarlyReturn:
         df = pd.DataFrame({"temperature_2m": np.ones(24) * 12.0}, index=idx)
         out = PeakInteractionFeatures().transform(df, zone_cfg_nl)
         assert "peak_hour_cold_interaction" not in out.columns
+
+
+class TestCommodityFeaturesExtra:
+    def test_diesel_crack_and_stress_features(self, zone_cfg_nl):
+        from runeflow.features.commodity import CommodityPriceFeatures
+
+        n = 24 * 60
+        idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
+        df = pd.DataFrame(
+            {
+                "Price_EUR_MWh": 70 + np.random.default_rng(1).standard_normal(n) * 5,
+                "commodity_brent_usd_bbl": 80 + np.sin(np.linspace(0, 10, n)) * 4,
+                "commodity_gas_eu_eur_mwh": 35 + np.sin(np.linspace(0, 16, n)) * 3,
+                "commodity_coal_usd_t": 120 + np.sin(np.linspace(0, 6, n)) * 2,
+                "commodity_diesel_usd_gal": 2.8 + np.sin(np.linspace(0, 11, n)) * 0.2,
+            },
+            index=idx,
+        )
+        out = CommodityPriceFeatures().transform(df, zone_cfg_nl)
+
+        assert "diesel_crack_spread_level" in out.columns
+        assert "diesel_crack_spread_z_30d" in out.columns
+        assert "diesel_crack_stress_regime" in out.columns
+        assert "market_stress_index" in out.columns
+        assert "stress_regime" in out.columns
+
+    def test_diesel_proxy_when_missing_diesel_series(self, zone_cfg_nl):
+        from runeflow.features.commodity import CommodityPriceFeatures
+
+        n = 24 * 40
+        idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
+        df = pd.DataFrame(
+            {
+                "Price_EUR_MWh": 65 + np.random.default_rng(2).standard_normal(n) * 4,
+                "commodity_brent_usd_bbl": 82 + np.sin(np.linspace(0, 8, n)) * 3,
+                "commodity_gas_eu_eur_mwh": 30 + np.sin(np.linspace(0, 8, n)) * 2,
+            },
+            index=idx,
+        )
+        out = CommodityPriceFeatures().transform(df, zone_cfg_nl)
+        assert "diesel_crack_spread_level" in out.columns
+        assert "diesel_data_quality_flag" in out.columns
+        # Derived proxy path should mark quality=0 where computed.
+        assert (out["diesel_data_quality_flag"].dropna() == 0).all()
+
+
+class TestInteractionFeaturesExtra:
+    def test_diesel_and_datacenter_interactions(self, zone_cfg_nl):
+        from runeflow.features.interaction import PeakInteractionFeatures
+
+        n = 24 * 5
+        idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
+        df = pd.DataFrame(
+            {
+                "is_peak_hour": (idx.hour.isin([17, 18, 19, 20])).astype(int),  # type: ignore[attr-defined]
+                "diesel_crack_spread_level": np.linspace(1.0, 2.0, n),
+                "wind_scarcity": np.linspace(0.1, 2.0, n),
+                "market_stress_index": np.linspace(0.5, 1.5, n),
+                "datacenter_pressure_proxy": np.linspace(-1.0, 1.0, n),
+            },
+            index=idx,
+        )
+        out = PeakInteractionFeatures().transform(df, zone_cfg_nl)
+        assert "diesel_crack_x_peak_hour" in out.columns
+        assert "diesel_crack_x_low_wind" in out.columns
+        assert "diesel_crack_x_market_stress" in out.columns
+        assert "datacenter_pressure_x_peak" in out.columns
 
 
 class TestDuckCurveEarlyReturn:

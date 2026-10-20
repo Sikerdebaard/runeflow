@@ -267,6 +267,10 @@ class TestInferenceCommand:
             result = runner.invoke(app, ["inference", "--zone", "NL"])
             assert result.exit_code == 0
             assert "3" in result.output  # 3 forecast points
+            MockInf.return_value.run.assert_called_once_with(
+                deterministic_only=False,
+                ensemble_member_limit=None,
+            )
 
     def test_inference_with_output(self, tmp_path):
         from unittest.mock import MagicMock, patch
@@ -289,6 +293,40 @@ class TestInferenceCommand:
             result = runner.invoke(app, ["inference", "--zone", "NL", "--output", str(out)])
             assert result.exit_code == 0
             assert out.exists()
+
+    def test_inference_with_cheap_mode_flags(self):
+        from unittest.mock import MagicMock, patch
+
+        import inject
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.inference.InferenceService") as MockInf,
+            patch.object(inject, "instance") as mock_inject_instance,
+        ):
+            mock_result = MagicMock()
+            mock_result.points = [MagicMock()]
+            MockInf.return_value.run.return_value = mock_result
+            mock_store = MagicMock()
+            mock_inject_instance.return_value = mock_store
+
+            result = runner.invoke(
+                app,
+                [
+                    "inference",
+                    "--zone",
+                    "NL",
+                    "--deterministic-only",
+                    "--ensemble-members",
+                    "5",
+                ],
+            )
+
+            assert result.exit_code == 0
+            MockInf.return_value.run.assert_called_once_with(
+                deterministic_only=True,
+                ensemble_member_limit=5,
+            )
 
 
 # ── export-tariffs command ────────────────────────────────────────────────────
@@ -361,6 +399,57 @@ class TestPlotUncertaintyCommand:
             )
             assert result.exit_code == 0
             assert str(out) in result.output
+
+
+class TestRunAblationCommand:
+    def test_run_ablation_success_defaults(self):
+        from unittest.mock import patch
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.ablation.AblationService") as MockSvc,
+        ):
+            MockSvc.return_value.run.return_value = {
+                "experiments": [
+                    {"key": "E0", "status": "ok"},
+                    {"key": "E1", "status": "failed"},
+                ]
+            }
+            result = runner.invoke(app, ["run-ablation", "--zone", "NL"])
+            assert result.exit_code == 0
+            assert "ok=1" in result.output
+            assert "failed=1" in result.output
+
+    def test_run_ablation_custom_args(self, tmp_path):
+        from unittest.mock import patch
+
+        out = tmp_path / "ablation.json"
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.ablation.AblationService") as MockSvc,
+        ):
+            MockSvc.return_value.run.return_value = {"experiments": []}
+            result = runner.invoke(
+                app,
+                [
+                    "run-ablation",
+                    "--zone",
+                    "NL",
+                    "--stage",
+                    "C",
+                    "--experiments",
+                    "E0,E7",
+                    "--output",
+                    str(out),
+                ],
+            )
+            assert result.exit_code == 0
+            MockSvc.return_value.run.assert_called_once_with(
+                zone="NL",
+                stage="C",
+                experiments=["E0", "E7"],
+                output_path=out,
+            )
 
 
 # ── main entry point ──────────────────────────────────────────────────────────

@@ -8,12 +8,11 @@ weather uncertainty factor over the forecast horizon.
 
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
 
-from runeflow.binder import logger, inject, BaseConfig
+from runeflow.binder import BaseConfig, inject, logger
 from runeflow.service.inference import download_actual_electricity_prices
 from runeflow.service.tariffs import PRICE_FORMULAS
 
@@ -69,16 +68,19 @@ def plot_uncertainty_bands(
     # the chart shows the same consumer prices as the tariff JSON.
     if price_provider and price_provider.lower() in PRICE_FORMULAS:
         _base_formula = PRICE_FORMULAS[price_provider.lower()]
+
         def _price_transform(p_mwh):
             return _base_formula(p_mwh / 1_000.0)  # MWh → kWh → consumer
+
         price_label = f"Price (€/kWh, {price_provider})"
     else:
+
         def _price_transform(p_mwh):
             return p_mwh / 1_000.0  # raw wholesale EUR/kWh
+
         price_label = "Price (€/kWh)"
 
     # Apply to every price column (skip n_ensemble_members)
-    n_members_raw = df["n_ensemble_members"].copy() if "n_ensemble_members" in df.columns else None
     price_cols = [c for c in df.columns if c != "n_ensemble_members"]
     for col in price_cols:
         df[col] = df[col].apply(_price_transform)
@@ -111,10 +113,7 @@ def plot_uncertainty_bands(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # --- Check which columns are available -----------------------------------
-    has_static = (
-        "prediction_lower_static" in df.columns
-        and "prediction_upper_static" in df.columns
-    )
+    has_static = "prediction_lower_static" in df.columns and "prediction_upper_static" in df.columns
     has_ensemble_bands = (
         "prediction_lower" in df.columns
         and "prediction_upper" in df.columns
@@ -130,24 +129,37 @@ def plot_uncertainty_bands(
     # ---- Panel 1: Ensemble + bands ------------------------------------------
     ax1 = axes[0]
     ax1.plot(
-        df.index, df["prediction_ensemble"],
-        label="Ensemble", color="purple", linewidth=2,
+        df.index,
+        df["prediction_ensemble"],
+        label="Ensemble",
+        color="purple",
+        linewidth=2,
     )
-    # Combined (weather ensemble ∪ model quantiles) bands – light-green, transparent, dashed outlines
+    # Combined (weather ensemble ∪ model quantiles) bands; light-green,
+    # transparent, dashed outlines.
     ax1.fill_between(
         df.index,
         df["prediction_lower"].values,
         df["prediction_upper"].values,
-        color="lightgreen", alpha=0.20,
+        color="lightgreen",
+        alpha=0.20,
         label="95% interval (weather ensemble ∪ model quantiles)",
     )
     ax1.plot(
-        df.index, df["prediction_lower"].values,
-        color="lightgreen", linewidth=0.9, linestyle="--", alpha=0.8,
+        df.index,
+        df["prediction_lower"].values,
+        color="lightgreen",
+        linewidth=0.9,
+        linestyle="--",
+        alpha=0.8,
     )
     ax1.plot(
-        df.index, df["prediction_upper"].values,
-        color="lightgreen", linewidth=0.9, linestyle="--", alpha=0.8,
+        df.index,
+        df["prediction_upper"].values,
+        color="lightgreen",
+        linewidth=0.9,
+        linestyle="--",
+        alpha=0.8,
     )
     # Static bands (model quantiles / P50 uncertainty) – purple fill + dashed outlines
     if has_static:
@@ -155,22 +167,34 @@ def plot_uncertainty_bands(
             df.index,
             df["prediction_lower_static"].values,
             df["prediction_upper_static"].values,
-            color="purple", alpha=0.18,
+            color="purple",
+            alpha=0.18,
             label="95% interval (model quantiles)",
         )
         ax1.plot(
-            df.index, df["prediction_lower_static"],
-            color="purple", linewidth=0.9, linestyle="--", alpha=0.7,
+            df.index,
+            df["prediction_lower_static"],
+            color="purple",
+            linewidth=0.9,
+            linestyle="--",
+            alpha=0.7,
         )
         ax1.plot(
-            df.index, df["prediction_upper_static"],
-            color="purple", linewidth=0.9, linestyle="--", alpha=0.7,
+            df.index,
+            df["prediction_upper_static"],
+            color="purple",
+            linewidth=0.9,
+            linestyle="--",
+            alpha=0.7,
         )
     # Actual prices
     if "actual" in df.columns:
         ax1.plot(
-            df.index, df["actual"],
-            label="Actual", color="orange", linewidth=1.5,
+            df.index,
+            df["actual"],
+            label="Actual",
+            color="orange",
+            linewidth=1.5,
         )
     ax1.set_title(f"Ensemble Forecast — Zone {zone}", fontsize=13, fontweight="bold")
     ax1.set_ylabel(price_label)
@@ -185,21 +209,70 @@ def plot_uncertainty_bands(
         ensemble_width = df["prediction_upper"] - df["prediction_lower"]
         static_width = df["prediction_upper_static"] - df["prediction_lower_static"]
 
-        ax2.fill_between(df.index, 0, ensemble_width, color="lightgreen", alpha=0.30, label="Combined band width (weather ∪ model quantiles)")
-        ax2.fill_between(df.index, 0, static_width, color="purple", alpha=0.25, label="Model quantile band width only")
-        ax2.plot(df.index, ensemble_width, color="lightgreen", linewidth=1.2, linestyle="--")
-        ax2.plot(df.index, static_width, color="purple", linewidth=1.2, linestyle="--")
+        ax2.fill_between(
+            df.index,
+            0,
+            ensemble_width,
+            color="lightgreen",
+            alpha=0.30,
+            label="Combined band width (weather ∪ model quantiles)",
+        )
+        ax2.fill_between(
+            df.index,
+            0,
+            static_width,
+            color="purple",
+            alpha=0.25,
+            label="Model quantile band width only",
+        )
+        ax2.plot(
+            df.index,
+            ensemble_width,
+            color="lightgreen",
+            linewidth=1.2,
+            linestyle="--",
+        )
+        ax2.plot(
+            df.index,
+            static_width,
+            color="purple",
+            linewidth=1.2,
+            linestyle="--",
+        )
         ax2.set_ylabel(price_label)
-        ax2.set_title("Uncertainty Band Width: Combined (weather ∪ model quantiles) vs Model-Only", fontsize=12)
+        ax2.set_title(
+            "Uncertainty Band Width: Combined (weather ∪ model quantiles) vs Model-Only",
+            fontsize=12,
+        )
         ax2.legend(loc="upper left", fontsize=9)
         ax2.grid(alpha=0.25)
         ax2.xaxis.set_major_formatter(mdates.DateFormatter("%a %d %b %H:%M"))
 
     # ---- Panel 3: Individual models -----------------------------------------
     ax3 = axes[2] if axes[2] is not None else axes[1]
-    ax3.plot(df.index, df["prediction_p50"], label="XGBoost P50", color="blue", alpha=0.7)
-    ax3.plot(df.index, df["prediction_knn"], label="KNN", color="green", linestyle="--", alpha=0.7)
-    ax3.plot(df.index, df["prediction_extreme"], label="Extreme", color="red", linestyle=":", alpha=0.7)
+    ax3.plot(
+        df.index,
+        df["prediction_p50"],
+        label="XGBoost P50",
+        color="blue",
+        alpha=0.7,
+    )
+    ax3.plot(
+        df.index,
+        df["prediction_knn"],
+        label="KNN",
+        color="green",
+        linestyle="--",
+        alpha=0.7,
+    )
+    ax3.plot(
+        df.index,
+        df["prediction_extreme"],
+        label="Extreme",
+        color="red",
+        linestyle=":",
+        alpha=0.7,
+    )
     ax3.plot(df.index, df["prediction_ensemble"], label="Ensemble", color="purple", linewidth=2)
     ax3.set_title("Individual Model Predictions", fontsize=12)
     ax3.set_xlabel("Time")

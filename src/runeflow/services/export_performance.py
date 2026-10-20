@@ -47,6 +47,7 @@ class ExportPerformanceService:
         self,
         output_path: Path,
         zones: list[str] | None = None,
+        days_back: int = 30,
     ) -> dict:
         """Compute and write performance JSON.
 
@@ -68,7 +69,7 @@ class ExportPerformanceService:
                 from runeflow.services.performance import PerformanceService
 
                 svc = PerformanceService()
-                perf = svc.compute_zone_performance()
+                perf = svc.compute_zone_performance(days_back=days_back)
                 payload[zone] = self._serialize_zone(perf)
             except Exception as exc:
                 logger.warning("ExportPerformance: %s failed: %s", zone, exc)

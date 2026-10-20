@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import pandas as pd
 
@@ -15,6 +16,14 @@ from runeflow.zones.config import ZoneConfig
 from .base import FeatureGroup
 
 logger = logging.getLogger(__name__)
+
+
+def _flag_enabled(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
 
 # Columns present in historical generation data but NOT available during inference.
 # These must never be used as model features.
@@ -75,5 +84,48 @@ class GenerationForecastFeatures(FeatureGroup):
                 df["forecast_residual_load_mw"] = (
                     df["load_forecast_mw"] - df["forecast_total_renewable_mw"]
                 )
+
+            if _flag_enabled("RUNEFLOW_ENABLE_DATACENTER_PROXY", default=True):
+                # Baseload and non-weather load proxy signals (AI/datacenter pressure).
+                overnight_mask = df.index.hour.isin([0, 1, 2, 3, 4, 5]).astype(float)  # type: ignore[attr-defined]
+                overnight_load = df["load_forecast_mw"].where(overnight_mask > 0)
+                df["baseload_min_rolling"] = overnight_load.rolling(
+                    7 * 24,
+                    min_periods=48,
+                ).quantile(0.10)
+                df["baseload_level_7d"] = overnight_load.rolling(
+                    7 * 24,
+                    min_periods=48,
+                ).mean()
+                df["baseload_level_30d"] = overnight_load.rolling(
+                    30 * 24,
+                    min_periods=7 * 24,
+                ).mean()
+                df["baseload_trend_30d"] = df["baseload_level_7d"] - df["baseload_level_30d"]
+                df["baseload_trend_90d"] = (
+                    df["load_forecast_mw"].rolling(30 * 24, min_periods=7 * 24).mean()
+                    - df["load_forecast_mw"].rolling(90 * 24, min_periods=14 * 24).mean()
+                )
+
+                # Weather-insensitive residual load proxy using available weather columns.
+                weather_cols = [
+                    c
+                    for c in df.columns
+                    if any(k in c.lower() for k in ["temperature", "wind_speed"])
+                ]
+                if weather_cols:
+                    weather_proxy = df[weather_cols].mean(axis=1)
+                    baseline = weather_proxy.shift(1).rolling(7 * 24, min_periods=48).mean()
+                    weather_anom = weather_proxy - baseline
+                    df["non_weather_load_residual"] = df["load_forecast_mw"] - (
+                        df["load_forecast_mw"].rolling(30 * 24, min_periods=7 * 24).mean()
+                        + weather_anom * 100.0
+                    )
+
+                if "baseload_trend_30d" in df.columns:
+                    # Normalized pressure proxy likely to track persistent demand uplift.
+                    trend = df["baseload_trend_30d"]
+                    scale = trend.shift(1).rolling(30 * 24, min_periods=7 * 24).std() + 1e-8
+                    df["datacenter_pressure_proxy"] = (trend / scale).clip(-5, 5)
 
         return df

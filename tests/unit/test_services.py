@@ -105,6 +105,15 @@ class TestServicesInit:
         assert hasattr(svcs, "PlotService")
 
 
+def test_xgb_quantile_keeps_native_inference_only():
+    from runeflow.models.xgboost_quantile import XGBoostQuantileModel
+
+    model = XGBoostQuantileModel()
+
+    assert not hasattr(model, "_is_accelerated")
+    assert not hasattr(model, "_load_accelerator_runtime")
+
+
 # ---------------------------------------------------------------------------
 # WarmupService
 # ---------------------------------------------------------------------------
@@ -637,6 +646,31 @@ class TestTrainServiceHelpers:
         w_recent = weights.iloc[-30 * 24 :].mean()
         w_old = weights.iloc[: 30 * 24].mean()
         assert w_recent > w_old
+
+    def test_compute_sample_weights_recent_regime_boost(self):
+        from runeflow.services.train import TrainService
+
+        idx = pd.date_range("2024-01-01", periods=365 * 24, freq="h", tz="UTC")
+        y = pd.Series(50.0, index=idx)
+        weights = TrainService._compute_sample_weights(y)
+
+        w_recent = weights.iloc[-30 * 24 :].mean()
+        w_old = weights.iloc[: 30 * 24].mean()
+        assert w_recent / w_old > 5.0
+
+    def test_compute_sample_weights_stress_sensitive_recent_window(self):
+        from runeflow.services.train import TrainService
+
+        idx = pd.date_range("2024-01-01", periods=365 * 24, freq="h", tz="UTC")
+        y = pd.Series(50.0, index=idx)
+        recent = y.iloc[-30 * 24 :].copy()
+        recent.iloc[-7 * 24 :] = 120.0 + np.linspace(0.0, 60.0, 7 * 24)
+        y.iloc[-30 * 24 :] = recent.to_numpy()
+
+        weights = TrainService._compute_sample_weights(y)
+        late_window = weights.iloc[-7 * 24 :].mean()
+        prior_recent_window = weights.iloc[-30 * 24 : -7 * 24].mean()
+        assert late_window > prior_recent_window * 1.5
 
     def test_compute_sample_weights_monotone_increasing(self):
         from runeflow.services.train import TrainService
@@ -2030,6 +2064,138 @@ class TestInferenceServiceRun:
         ):
             svc.run()
 
+    def test_run_deterministic_only_skips_ensemble_download(self):
+        """deterministic_only=True should not call ensemble weather download."""
+        from unittest.mock import patch
+
+        svc = self._make_service()
+
+        xgb = MagicMock()
+        xgb.is_trained = True
+        ext_high = MagicMock()
+        ext_high.is_trained = False
+        ext_low = MagicMock()
+        ext_low.is_trained = False
+        imputer = MagicMock()
+        features = ["temperature_2m"]
+
+        svc._store.load_warmup_cache.return_value = pd.DataFrame(
+            {"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24},
+            index=pd.date_range("2024-06-01", periods=24, freq="h", tz="UTC"),
+        )
+
+        det_weather = MagicMock()
+        det_weather.df = pd.DataFrame(
+            {"temperature_2m": [10.0]},
+            index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"),
+        )
+        det_weather.source = "test"
+        det_weather.locations = []
+        det_weather.fetched_at = pd.Timestamp.now("UTC")
+        svc._weather_port.download_forecast.return_value = det_weather
+        svc._weather_port.download_ensemble_forecast.side_effect = RuntimeError(
+            "should not be called"
+        )
+
+        ts = pd.Timestamp.now("UTC").floor("h")
+        worker_result = {
+            ts: {
+                "prediction": 50.0,
+                "lower": 40.0,
+                "upper": 60.0,
+                "uncertainty": 20.0,
+                "model_agreement": 0.9,
+                "xgboost_p50": 50.0,
+                "xgboost_p10": 40.0,
+                "xgboost_p90": 60.0,
+                "extreme_high": None,
+                "extreme_low": None,
+            }
+        }
+
+        with (
+            patch.object(
+                svc,
+                "_load_models",
+                return_value=(xgb, ext_high, ext_low, imputer, features, "202501010000"),
+            ),
+            patch.object(svc, "_load_supplemental_forecast", return_value=None),
+            patch("runeflow.services.inference._run_forecast_worker", return_value=worker_result),
+        ):
+            result = svc.run(deterministic_only=True)
+
+        assert result.zone == "NL"
+        svc._weather_port.download_ensemble_forecast.assert_not_called()
+
+    def test_run_ensemble_member_limit_caps_parallel_members(self):
+        """ensemble_member_limit should cap number of members passed to parallel runs."""
+        from unittest.mock import patch
+
+        svc = self._make_service()
+
+        xgb = MagicMock()
+        xgb.is_trained = True
+        ext_high = MagicMock()
+        ext_high.is_trained = True
+        ext_low = MagicMock()
+        ext_low.is_trained = True
+        imputer = MagicMock()
+        features = ["temperature_2m"]
+        svc._store.load_warmup_cache.return_value = pd.DataFrame(
+            {"temperature_2m": [8.0] * 24, "Price_EUR_MWh": [50.0] * 24},
+            index=pd.date_range("2024-06-01", periods=24, freq="h", tz="UTC"),
+        )
+
+        det_weather = MagicMock()
+        det_weather.df = pd.DataFrame(
+            {"temperature_2m": [10.0]},
+            index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"),
+        )
+        det_weather.source = "test"
+        det_weather.locations = []
+        det_weather.fetched_at = pd.Timestamp.now("UTC")
+        svc._weather_port.download_forecast.return_value = det_weather
+
+        ens_member = MagicMock()
+        ens_member.df = pd.DataFrame(
+            {"temperature_2m": [11.0]},
+            index=pd.date_range("2024-07-01", periods=1, freq="h", tz="UTC"),
+        )
+        svc._weather_port.download_ensemble_forecast.return_value = [ens_member] * 3
+
+        ts = pd.Timestamp.now("UTC").floor("h")
+        worker_result = {
+            ts: {
+                "prediction": 50.0,
+                "lower": 40.0,
+                "upper": 60.0,
+                "uncertainty": 20.0,
+                "model_agreement": 0.9,
+                "xgboost_p50": 50.0,
+                "xgboost_p10": 40.0,
+                "xgboost_p90": 60.0,
+                "extreme_high": 65.0,
+                "extreme_low": 35.0,
+            }
+        }
+
+        with (
+            patch.object(
+                svc,
+                "_load_models",
+                return_value=(xgb, ext_high, ext_low, imputer, features, "202501010000"),
+            ),
+            patch.object(svc, "_load_supplemental_forecast", return_value=None),
+            patch("runeflow.services.inference._run_forecast_worker", return_value=worker_result),
+            patch("runeflow.services.inference.joblib") as mock_joblib,
+        ):
+            mock_joblib.Parallel.return_value = lambda gen: list(gen)
+            mock_joblib.delayed = lambda f: f
+            result = svc.run(ensemble_member_limit=1)
+
+        assert result.zone == "NL"
+        assert result.ensemble_members.shape[1] == 1
+
 
 class TestInferenceSupplementalTzConvert:
     """Cover tz_localize branches in _load_supplemental_forecast (lines 337, 355)."""
@@ -2073,3 +2239,69 @@ class TestInferenceSupplementalTzConvert:
         assert result is not None
         assert "ned_utilization_kwh" in result.columns
         assert result.index.tz is not None
+
+
+class TestAblationService:
+    def test_run_stage_a_uses_deterministic_mode(self, tmp_path):
+        from runeflow.services.ablation import AblationService
+
+        svc = AblationService()
+        output = tmp_path / "ablation.json"
+
+        fake_store = MagicMock()
+        fake_train_result = MagicMock()
+        fake_train_result.model_version = "202501010000"
+        fake_train_result.metrics = {"xgboost_quantile": {"mae": 1.0, "r2": 0.9, "coverage": 95.0}}
+
+        fake_forecast = MagicMock()
+        fake_perf = MagicMock()
+        fake_perf.overall_mae = 10.0
+        fake_perf.overall_rmse = 12.0
+        fake_perf.ensemble_coverage_pct = 55.0
+        fake_perf.n_archived_forecasts = 3
+        fake_perf.n_comparable_hours = 60
+        fake_perf.horizon_metrics = []
+
+        with (
+            patch("runeflow.services.ablation.inject.instance", return_value=fake_store),
+            patch("runeflow.services.ablation.TrainService") as MockTrain,
+            patch("runeflow.services.ablation.WarmupService") as MockWarmup,
+            patch("runeflow.services.ablation.InferenceService") as MockInf,
+            patch("runeflow.services.ablation.PerformanceService") as MockPerf,
+        ):
+            MockTrain.return_value.run.return_value = fake_train_result
+            MockWarmup.return_value.run.return_value = pd.DataFrame()
+            MockInf.return_value.run.return_value = fake_forecast
+            MockPerf.return_value.compute_zone_performance.return_value = fake_perf
+
+            report = svc.run(
+                zone="NL",
+                stage="A",
+                experiments=["E0"],
+                output_path=output,
+            )
+
+        assert output.exists()
+        assert report["stage"] == "A"
+        MockInf.return_value.run.assert_called_once_with(
+            deterministic_only=True,
+            ensemble_member_limit=0,
+        )
+        fake_store.save_forecast.assert_called_once()
+
+    def test_unknown_experiment_is_skipped(self, tmp_path):
+        from runeflow.services.ablation import AblationService
+
+        svc = AblationService()
+        output = tmp_path / "ablation_skip.json"
+
+        with patch("runeflow.services.ablation.inject.instance", return_value=MagicMock()):
+            report = svc.run(
+                zone="NL",
+                stage="A",
+                experiments=["UNKNOWN"],
+                output_path=output,
+            )
+
+        assert output.exists()
+        assert report["experiments"][0]["status"] == "skipped"

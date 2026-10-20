@@ -37,4 +37,19 @@ class PeakInteractionFeatures(FeatureGroup):
         if "cdd_24h" in df.columns:
             df["peak_hour_heat_interaction"] = df["is_peak_hour"] * df["cdd_24h"]
 
+        if "diesel_crack_spread_level" in df.columns:
+            df["diesel_crack_x_peak_hour"] = df["diesel_crack_spread_level"] * df["is_peak_hour"]
+
+            if "wind_scarcity" in df.columns:
+                low_wind = (df["wind_scarcity"] > df["wind_scarcity"].median()).astype(int)
+                df["diesel_crack_x_low_wind"] = df["diesel_crack_spread_level"] * low_wind
+
+            if "market_stress_index" in df.columns:
+                df["diesel_crack_x_market_stress"] = (
+                    df["diesel_crack_spread_level"] * df["market_stress_index"]
+                )
+
+        if "datacenter_pressure_proxy" in df.columns:
+            df["datacenter_pressure_x_peak"] = df["datacenter_pressure_proxy"] * df["is_peak_hour"]
+
         return df
