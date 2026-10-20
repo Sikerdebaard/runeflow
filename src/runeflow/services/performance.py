@@ -46,13 +46,13 @@ class PerformanceService:
         self._store = store
 
     # ------------------------------------------------------------------
-    def compute_zone_performance(self) -> ZonePerformance:
+    def compute_zone_performance(self, *, days_back: int = 30) -> ZonePerformance:
         zone = self._zone_cfg.zone
         zone_name = self._zone_cfg.name
 
         train_history = self._load_train_history(zone)
 
-        archives = self._store.load_forecast_archive(zone, days_back=30)
+        archives = self._store.load_forecast_archive(zone, days_back=days_back)
         actuals = self._store.load_prices(zone)
 
         accuracies: list[ForecastAccuracy] = []

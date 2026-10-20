@@ -53,7 +53,8 @@ dev = [
     "types-requests>=2.32",
 ]
 intel = [
-    "scikit-learn-intelex>=2024.0",
+    "scikit-learn<1.8",
+    "scikit-learn-intelex==2024.7.0",
 ]
 
 [project.scripts]

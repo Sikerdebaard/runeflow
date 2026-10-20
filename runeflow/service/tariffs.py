@@ -25,7 +25,7 @@ are used directly.
 from __future__ import annotations
 
 import datetime
-from typing import Callable
+from collections.abc import Callable
 
 # ---------------------------------------------------------------------------
 # VAT
@@ -45,8 +45,8 @@ NL_VAT = 1.21  # 21% BTW multiplier
 _NL_ENERGIEBELASTING_BY_YEAR: dict[int, float] = {
     # year : EUR/kWh excl. BTW
     2024: 0.10154,
-    2025: 0.10154,    # unchanged from 2024
-    2026: 0.09161157, # reduced as of 2026-01-01 (source: epexprijzen.nl)
+    2025: 0.10154,  # unchanged from 2024
+    2026: 0.09161157,  # reduced as of 2026-01-01 (source: epexprijzen.nl)
     # 2027: 0.0????,  # ← add here when known (published ~December each year)
 }
 
@@ -68,7 +68,7 @@ def get_energiebelasting(dt: datetime.date | None = None) -> float:
         EUR/kWh excl. BTW for the first 10 000 kWh/year bracket.
     """
     if dt is None:
-        dt = datetime.datetime.now(tz=datetime.timezone.utc).date()
+        dt = datetime.datetime.now(tz=datetime.UTC).date()
     year = dt.year if isinstance(dt, datetime.date) else dt
     # Exact match first, then walk backwards to find the most recent known rate.
     while year >= min(_NL_ENERGIEBELASTING_BY_YEAR):
@@ -98,38 +98,37 @@ def get_energiebelasting(dt: datetime.date | None = None) -> float:
 PRICE_FORMULAS: dict[str, Callable[[float], float]] = {
     # Raw wholesale price — no taxes, no markup
     "wholesale": lambda p: p,
-
     # --- Dutch dynamic electricity providers, sorted by opslag (low → high) ---
     # Advertised opslag incl. BTW: €0.018/kWh
-    "anwb-energie":       lambda p: (p + 0.018   / 1.21 + get_energiebelasting()) * NL_VAT,
-    "frank-energie":      lambda p: (p + 0.0182  / 1.21 + get_energiebelasting()) * NL_VAT,
-    "frank-energie-slim": lambda p: (p + 0.0182  / 1.21 + get_energiebelasting()) * NL_VAT,
+    "anwb-energie": lambda p: (p + 0.018 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "frank-energie": lambda p: (p + 0.0182 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "frank-energie-slim": lambda p: (p + 0.0182 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Engie stores markup excl. BTW directly (→ €0.019 incl. BTW)
-    "engie":              lambda p: (p + 0.0157          + get_energiebelasting()) * NL_VAT,
+    "engie": lambda p: (p + 0.0157 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.020/kWh
-    "coolblue-energie":   lambda p: (p + 0.02    / 1.21 + get_energiebelasting()) * NL_VAT,
-    "zonneplan":          lambda p: (p + 0.02    / 1.21 + get_energiebelasting()) * NL_VAT,
+    "coolblue-energie": lambda p: (p + 0.02 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "zonneplan": lambda p: (p + 0.02 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.021/kWh
-    "tibber":             lambda p: (p + 0.021   / 1.21 + get_energiebelasting()) * NL_VAT,
+    "tibber": lambda p: (p + 0.021 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Budget Energie stores markup excl. BTW directly (→ €0.021 incl. BTW)
-    "budget-energie":     lambda p: (p + 0.0174          + get_energiebelasting()) * NL_VAT,
+    "budget-energie": lambda p: (p + 0.0174 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.022/kWh
-    "easyenergy":         lambda p: (p + 0.02178 / 1.21 + get_energiebelasting()) * NL_VAT,
-    "nextenergy":         lambda p: (p + 0.0219  / 1.21 + get_energiebelasting()) * NL_VAT,
+    "easyenergy": lambda p: (p + 0.02178 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "nextenergy": lambda p: (p + 0.0219 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.023/kWh
-    "eneco":              lambda p: (p + 0.02257 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "eneco": lambda p: (p + 0.02257 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.025/kWh
-    "innova":             lambda p: (p + 0.02508 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "innova": lambda p: (p + 0.02508 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.026/kWh
-    "vandebron":          lambda p: (p + 0.02571 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "vandebron": lambda p: (p + 0.02571 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.029/kWh
-    "energie-vanons":     lambda p: (p + 0.029   / 1.21 + get_energiebelasting()) * NL_VAT,
+    "energie-vanons": lambda p: (p + 0.029 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.030/kWh
-    "atoom-alliantie":    lambda p: (p + 0.03025 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "atoom-alliantie": lambda p: (p + 0.03025 / 1.21 + get_energiebelasting()) * NL_VAT,
     # Advertised opslag incl. BTW: €0.034/kWh
-    "energyzero":         lambda p: (p + 0.03388 / 1.21 + get_energiebelasting()) * NL_VAT,
-    "hegg":               lambda p: (p + 0.03388 / 1.21 + get_energiebelasting()) * NL_VAT,
-    "samsam":             lambda p: (p + 0.0339  / 1.21 + get_energiebelasting()) * NL_VAT,
+    "energyzero": lambda p: (p + 0.03388 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "hegg": lambda p: (p + 0.03388 / 1.21 + get_energiebelasting()) * NL_VAT,
+    "samsam": lambda p: (p + 0.0339 / 1.21 + get_energiebelasting()) * NL_VAT,
 }
 
 

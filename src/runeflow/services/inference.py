@@ -244,7 +244,12 @@ class InferenceService:
             self._supplemental_port = None
 
     # ------------------------------------------------------------------
-    def run(self) -> ForecastResult:
+    def run(
+        self,
+        *,
+        deterministic_only: bool = False,
+        ensemble_member_limit: int | None = None,
+    ) -> ForecastResult:
         zone = self._zone_cfg.zone
         logger.info("InferenceService starting for zone=%s", zone)
 
@@ -291,12 +296,18 @@ class InferenceService:
                 "Joined supplemental forecast (%d rows) into deterministic weather",
                 len(ned_forecast),
             )
-        try:
-            ens_members = self._weather_port.download_ensemble_forecast(locations, horizon_days=9)
-            logger.info("Ensemble weather: %d members", len(ens_members))
-        except Exception as exc:
-            logger.warning("Ensemble weather forecast unavailable: %s", exc)
-            ens_members = []
+        ens_members: list = []
+        if deterministic_only:
+            logger.info("Deterministic-only mode enabled; skipping ensemble weather download")
+        else:
+            try:
+                ens_members = self._weather_port.download_ensemble_forecast(
+                    locations, horizon_days=9
+                )
+                logger.info("Ensemble weather: %d members", len(ens_members))
+            except Exception as exc:
+                logger.warning("Ensemble weather forecast unavailable: %s", exc)
+                ens_members = []
 
         # Build forecast timestamps
         now_utc = pd.Timestamp.now("UTC").floor("h")
@@ -325,7 +336,11 @@ class InferenceService:
         logger.info("Deterministic forecast done (%d points)", len(det_results))
 
         # Ensemble runs — one joblib worker per member (loky backend)
-        members_to_run = ens_members[:N_ENSEMBLE_MEMBERS]
+        member_cap = N_ENSEMBLE_MEMBERS
+        if ensemble_member_limit is not None:
+            member_cap = max(0, int(ensemble_member_limit))
+
+        members_to_run = ens_members[:member_cap]
         member_results: list[dict[pd.Timestamp, dict]] = []
 
         if members_to_run:

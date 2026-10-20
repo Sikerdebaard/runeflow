@@ -63,6 +63,13 @@ class XGBoostQuantileModel(ModelPort):
         self._trained = False
         self._metrics: dict[str, Any] = {}
 
+    def _predict_native_or_daal(
+        self, model: xgb.XGBRegressor | None, X: pd.DataFrame | np.ndarray
+    ) -> np.ndarray:
+        if model is None:
+            raise ModelNotTrainedError("XGBoostQuantileModel is not trained")
+        return np.asarray(model.predict(X))
+
     # ------------------------------------------------------------------
     @property
     def name(self) -> str:
@@ -208,9 +215,9 @@ class XGBoostQuantileModel(ModelPort):
         assert self._model_lower is not None
         assert self._model_upper is not None
 
-        p50 = self._model_p50.predict(X)
-        lower = self._model_lower.predict(X) - self._conf_adj_lower
-        upper = self._model_upper.predict(X) + self._conf_adj_upper
+        p50 = self._predict_native_or_daal(self._model_p50, X)
+        lower = self._predict_native_or_daal(self._model_lower, X) - self._conf_adj_lower
+        upper = self._predict_native_or_daal(self._model_upper, X) + self._conf_adj_upper
 
         return pd.DataFrame(
             {"prediction": p50, "lower": lower, "upper": upper},

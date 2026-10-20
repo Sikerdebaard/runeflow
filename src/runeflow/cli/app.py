@@ -11,6 +11,7 @@ Usage:
     runeflow train --zone NL
     runeflow warmup-cache --zone NL
     runeflow inference --zone NL
+    runeflow run-ablation --zone NL --stage A
     runeflow export-tariffs --zone NL --provider vattenfall
     runeflow plot-uncertainty --zone NL
 """
@@ -144,6 +145,16 @@ def inference(
     output: Path | None = typer.Option(  # noqa: B008, E501
         None, "--output", "-o", help="Write forecast JSON"
     ),
+    deterministic_only: bool = typer.Option(
+        False,
+        "--deterministic-only",
+        help="Skip weather-ensemble runs (cheap deterministic-only execution)",
+    ),
+    ensemble_members: int | None = typer.Option(
+        None,
+        "--ensemble-members",
+        help="Limit number of ensemble members (e.g. 5-10 for cheap screening)",
+    ),
 ) -> None:
     """Generate a 9-day price forecast."""
     _setup(zone)
@@ -153,7 +164,10 @@ def inference(
     from runeflow.services.inference import InferenceService
 
     svc = InferenceService()
-    result = svc.run()
+    result = svc.run(
+        deterministic_only=deterministic_only,
+        ensemble_member_limit=ensemble_members,
+    )
 
     store: DataStore = inject.instance(DataStore)  # type: ignore[assignment]
     store.save_forecast(result)
@@ -163,6 +177,46 @@ def inference(
         df = result.to_dataframe()
         output.write_text(df.to_json(orient="records", date_format="iso"), encoding="utf-8")
         typer.echo(f"✓ Forecast written to {output}")
+
+
+@app.command("run-ablation")
+def run_ablation(
+    zone: str = typer.Option("NL", "--zone", "-z", help="Market zone"),
+    stage: str = typer.Option(
+        "A",
+        "--stage",
+        help=(
+            "Compute stage: A (cheap short deterministic), B (deterministic full "
+            "window), C (reduced ensemble), D (full ensemble)"
+        ),
+    ),
+    experiments: str = typer.Option(
+        "E0,E1,E2,E3,E4,E5,E6,E7",
+        "--experiments",
+        help="Comma-separated experiment keys to run",
+    ),
+    output: Path = typer.Option(  # noqa: B008
+        Path("./outputs/ablation_report.json"),
+        "--output",
+        "-o",
+        help="Output JSON path",
+    ),
+) -> None:
+    """Run staged ablation experiments (E0..E7) with cheap-first controls."""
+    _setup(zone)
+    from runeflow.services.ablation import AblationService
+
+    exp_keys = [k.strip().upper() for k in experiments.split(",") if k.strip()]
+    svc = AblationService()
+    report = svc.run(zone=zone, stage=stage.upper(), experiments=exp_keys, output_path=output)
+
+    done = [e for e in report.get("experiments", []) if e.get("status") == "ok"]
+    failed = [e for e in report.get("experiments", []) if e.get("status") == "failed"]
+    typer.echo(
+        "✓ Ablation stage "
+        f"{stage.upper()} complete — ok={len(done)} failed={len(failed)} "
+        f"output={output}"
+    )
 
 
 @app.command("export-tariffs")
@@ -215,6 +269,7 @@ def export_performance(
     zones: str | None = typer.Option(
         None, "--zones", help="Comma-separated zone codes (default: all)"
     ),
+    days_back: int = typer.Option(30, "--days-back", help="Retrospective window in days"),
 ) -> None:
     """Export model performance metrics as JSON."""
     from runeflow.zones.registry import ZoneRegistry
@@ -226,7 +281,7 @@ def export_performance(
     from runeflow.services.export_performance import ExportPerformanceService
 
     svc = ExportPerformanceService()
-    svc.run(output_path=output, zones=zone_list)
+    svc.run(output_path=output, zones=zone_list, days_back=days_back)
     typer.echo(f"✓ Performance exported for {len(zone_list)} zones to {output}")
 
 
