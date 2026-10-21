@@ -23,6 +23,7 @@ class ForecastAccuracy:
     mape: float | None  # Mean Absolute % Error (None when actuals contain zeros)
     directional_accuracy: float  # Fraction of hours where direction (up/down) was correct
     mean_model_agreement: float  # Average model_agreement score for compared hours
+    bias: float = 0.0  # Mean signed error (prediction − actual); >0 means overprediction
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,9 @@ class ZonePerformance:
     n_comparable_hours: int
 
     generated_at: pd.Timestamp
+
+    # Mean signed error (prediction − actual); >0 means systematic overprediction
+    overall_bias: float | None = None
 
 
 @dataclass(frozen=True)

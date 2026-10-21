@@ -647,30 +647,50 @@ class TestTrainServiceHelpers:
         w_old = weights.iloc[: 30 * 24].mean()
         assert w_recent > w_old
 
-    def test_compute_sample_weights_recent_regime_boost(self):
+    def test_compute_sample_weights_recent_boost_bounded(self):
         from runeflow.services.train import TrainService
 
         idx = pd.date_range("2024-01-01", periods=365 * 24, freq="h", tz="UTC")
         y = pd.Series(50.0, index=idx)
         weights = TrainService._compute_sample_weights(y)
 
+        # The recent 30-day window must only be modestly boosted over the
+        # preceding 30 days (the PR #18 bug pushed this ratio to >5x).
         w_recent = weights.iloc[-30 * 24 :].mean()
-        w_old = weights.iloc[: 30 * 24].mean()
-        assert w_recent / w_old > 5.0
+        w_prior = weights.iloc[-60 * 24 : -30 * 24].mean()
+        assert w_recent / w_prior < 2.0
 
-    def test_compute_sample_weights_stress_sensitive_recent_window(self):
+        # The recent window must not capture an outsized share of total weight.
+        recent_share = weights.iloc[-30 * 24 :].sum() / weights.sum()
+        assert recent_share < 0.30
+
+    def test_compute_sample_weights_ignore_target_values(self):
         from runeflow.services.train import TrainService
 
         idx = pd.date_range("2024-01-01", periods=365 * 24, freq="h", tz="UTC")
-        y = pd.Series(50.0, index=idx)
-        recent = y.iloc[-30 * 24 :].copy()
-        recent.iloc[-7 * 24 :] = 120.0 + np.linspace(0.0, 60.0, 7 * 24)
-        y.iloc[-30 * 24 :] = recent.to_numpy()
+        y_flat = pd.Series(50.0, index=idx)
+        y_spiky = y_flat.copy()
+        y_spiky.iloc[-30 * 24 :] = 200.0  # elevate the recent target
 
+        w_flat = TrainService._compute_sample_weights(y_flat)
+        w_spiky = TrainService._compute_sample_weights(y_spiky)
+
+        # Weights must depend only on timestamps, never on target values
+        # (no label leakage into the loss).
+        pd.testing.assert_series_equal(w_flat, w_spiky)
+
+    def test_compute_sample_weights_recent_share_capped(self):
+        from runeflow.services.train import TrainService
+
+        # Short history where the recent window is everything: the cap keeps
+        # the weights finite and normalised.
+        idx = pd.date_range("2024-01-01", periods=40 * 24, freq="h", tz="UTC")
+        y = pd.Series(50.0, index=idx)
         weights = TrainService._compute_sample_weights(y)
-        late_window = weights.iloc[-7 * 24 :].mean()
-        prior_recent_window = weights.iloc[-30 * 24 : -7 * 24].mean()
-        assert late_window > prior_recent_window * 1.5
+
+        assert (weights >= 0).all()
+        assert np.isfinite(weights).all()
+        assert abs(weights.mean() - 1.0) < 0.05
 
     def test_compute_sample_weights_monotone_increasing(self):
         from runeflow.services.train import TrainService
@@ -823,6 +843,121 @@ class TestTrainServiceRun:
 
         df = svc._assemble_training_frame("NL")
         assert "solar_output_mw" in df.columns
+
+    def test_engineer_drops_legacy_diesel_columns(self):
+        """_engineer_and_select_features drops legacy diesel columns from caches."""
+        from unittest.mock import patch
+
+        from runeflow.services.train import TrainService
+        from runeflow.zones.registry import ZoneRegistry
+
+        zone_cfg = ZoneRegistry.get("NL")
+        n = 100
+        idx = pd.date_range("2023-01-01", periods=n, freq="h", tz="UTC")
+        df = pd.DataFrame(
+            {
+                "Price_EUR_MWh": np.ones(n) * 50.0,
+                "temperature_2m": np.ones(n) * 10.0,
+                "wind_speed_10m": np.ones(n) * 5.0,
+                "shortwave_radiation": np.ones(n) * 200.0,
+                "commodity_diesel_usd_gal": np.ones(n) * 2.8,
+            },
+            index=idx,
+        )
+
+        svc = TrainService.__new__(TrainService)
+        svc._zone_cfg = zone_cfg
+        svc._store = MagicMock()
+
+        class _Passthrough:
+            def transform(self, df, zone_cfg):
+                return df
+
+        with patch("runeflow.services.train.build_pipeline", return_value=_Passthrough()):
+            out_df, features = svc._engineer_and_select_features(df)
+
+        assert "commodity_diesel_usd_gal" not in features
+        assert "temperature_2m" in features
+
+    def test_check_promotion_rejects_worse_model(self):
+        from runeflow.services.train import TrainService
+        from runeflow.zones.registry import ZoneRegistry
+
+        store = MagicMock()
+        store.load_supplemental.return_value = pd.DataFrame({"mae": [10.0]})
+        svc = TrainService.__new__(TrainService)
+        svc._zone_cfg = ZoneRegistry.get("NL")
+        svc._store = store
+
+        result = svc._check_promotion({"mae": 20.0}, "NL")
+        assert result["promoted"] is False
+        assert "worse" in result["promotion_reason"]
+
+    def test_check_promotion_accepts_better_or_equal_model(self):
+        from runeflow.services.train import TrainService
+        from runeflow.zones.registry import ZoneRegistry
+
+        store = MagicMock()
+        store.load_supplemental.return_value = pd.DataFrame({"mae": [20.0]})
+        svc = TrainService.__new__(TrainService)
+        svc._zone_cfg = ZoneRegistry.get("NL")
+        svc._store = store
+
+        assert svc._check_promotion({"mae": 10.0}, "NL")["promoted"] is True
+        assert svc._check_promotion({"mae": 22.0}, "NL")["promoted"] is True  # within margin
+
+    def test_check_promotion_no_baseline_promotes(self):
+        from runeflow.services.train import TrainService
+        from runeflow.zones.registry import ZoneRegistry
+
+        store = MagicMock()
+        store.load_supplemental.return_value = None
+        svc = TrainService.__new__(TrainService)
+        svc._zone_cfg = ZoneRegistry.get("NL")
+        svc._store = store
+
+        assert svc._check_promotion({"mae": 20.0}, "NL")["promoted"] is True
+
+    def test_check_promotion_force_overrides_rejection(self):
+        from runeflow.services.train import TrainService
+        from runeflow.zones.registry import ZoneRegistry
+
+        store = MagicMock()
+        store.load_supplemental.return_value = pd.DataFrame({"mae": [10.0]})
+        svc = TrainService.__new__(TrainService)
+        svc._zone_cfg = ZoneRegistry.get("NL")
+        svc._store = store
+
+        result = svc._check_promotion({"mae": 20.0}, "NL", force=True)
+        assert result["promoted"] is True
+        assert result["promotion_reason"] == "forced"
+
+    def test_run_does_not_save_when_promotion_rejected(self):
+        """A materially worse candidate must not overwrite the deployed model."""
+        from runeflow.domain.training import TrainResult
+        from runeflow.models.extreme_high import ExtremeHighModel
+        from runeflow.models.extreme_low import ExtremeLowModel
+        from runeflow.models.xgboost_quantile import XGBoostQuantileModel
+
+        price_mock, weather_mock = self._make_training_data()
+        svc = self._make_service(price_mock, weather_mock)
+        # Deployed model's last MAE is 5.0; the candidate is far worse (20.0).
+        svc._store.load_supplemental.return_value = pd.DataFrame({"mae": [5.0]})
+
+        bad_metrics = {"mae": 20.0, "r2": 0.5, "coverage": 60.0}
+        with (
+            patch.object(XGBoostQuantileModel, "train", return_value=bad_metrics),
+            patch.object(XGBoostQuantileModel, "save") as mock_xgb_save,
+            patch.object(ExtremeHighModel, "train", return_value=bad_metrics),
+            patch.object(ExtremeHighModel, "save"),
+            patch.object(ExtremeLowModel, "train", return_value=bad_metrics),
+            patch.object(ExtremeLowModel, "save"),
+        ):
+            result = svc.run()
+
+        assert isinstance(result, TrainResult)
+        assert result.quality_assessment["promoted"] is False
+        mock_xgb_save.assert_not_called()
 
     def test_assemble_frame_missing_prices_raises(self):
         """_assemble_training_frame raises RuntimeError when prices are None."""
@@ -2242,38 +2377,26 @@ class TestInferenceSupplementalTzConvert:
 
 
 class TestAblationService:
-    def test_run_stage_a_uses_deterministic_mode(self, tmp_path):
+    def test_run_reports_backtest_metrics(self, tmp_path):
         from runeflow.services.ablation import AblationService
 
         svc = AblationService()
         output = tmp_path / "ablation.json"
 
-        fake_store = MagicMock()
-        fake_train_result = MagicMock()
-        fake_train_result.model_version = "202501010000"
-        fake_train_result.metrics = {"xgboost_quantile": {"mae": 1.0, "r2": 0.9, "coverage": 95.0}}
-
-        fake_forecast = MagicMock()
-        fake_perf = MagicMock()
-        fake_perf.overall_mae = 10.0
-        fake_perf.overall_rmse = 12.0
-        fake_perf.ensemble_coverage_pct = 55.0
-        fake_perf.n_archived_forecasts = 3
-        fake_perf.n_comparable_hours = 60
-        fake_perf.horizon_metrics = []
-
-        with (
-            patch("runeflow.services.ablation.inject.instance", return_value=fake_store),
-            patch("runeflow.services.ablation.TrainService") as MockTrain,
-            patch("runeflow.services.ablation.WarmupService") as MockWarmup,
-            patch("runeflow.services.ablation.InferenceService") as MockInf,
-            patch("runeflow.services.ablation.PerformanceService") as MockPerf,
+        with patch.object(
+            svc,
+            "_backtest",
+            return_value={
+                "n_train_hours": 1000,
+                "holdout_hours": 168,
+                "train_val_mae": 1.0,
+                "train_val_r2": 0.9,
+                "train_val_coverage": 95.0,
+                "holdout_mae": 10.0,
+                "holdout_rmse": 12.0,
+                "holdout_bias": 0.5,
+            },
         ):
-            MockTrain.return_value.run.return_value = fake_train_result
-            MockWarmup.return_value.run.return_value = pd.DataFrame()
-            MockInf.return_value.run.return_value = fake_forecast
-            MockPerf.return_value.compute_zone_performance.return_value = fake_perf
-
             report = svc.run(
                 zone="NL",
                 stage="A",
@@ -2283,11 +2406,51 @@ class TestAblationService:
 
         assert output.exists()
         assert report["stage"] == "A"
-        MockInf.return_value.run.assert_called_once_with(
-            deterministic_only=True,
-            ensemble_member_limit=0,
+        assert report["stage_config"]["days_back"] == 7
+        exp = report["experiments"][0]
+        assert exp["status"] == "ok"
+        assert exp["backtest"]["holdout_mae"] == 10.0
+        assert exp["backtest"]["holdout_rmse"] == 12.0
+        assert exp["backtest"]["holdout_bias"] == 0.5
+
+    def test_backtest_scores_new_model_holdout(self):
+        """The backtest must score the *new* model on a held-out window."""
+        from runeflow.services.ablation import AblationService, _StageConfig
+
+        svc = AblationService()
+        n = 24 * 60
+        idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
+        rng = np.random.default_rng(7)
+        df = pd.DataFrame(
+            {
+                "temperature_2m": rng.uniform(-5, 30, n),
+                "Price_EUR_MWh": rng.uniform(20, 150, n),
+            },
+            index=idx,
         )
-        fake_store.save_forecast.assert_called_once()
+        features = ["temperature_2m"]
+
+        captured: dict[str, int] = {}
+
+        class _FakeModel:
+            def train(self, X_tr, y_tr, X_va, y_va, sample_weight):
+                return {"mae": 4.0, "r2": 0.9, "coverage": 95.0}
+
+            def predict(self, X):
+                captured["predict_len"] = len(X)
+                return pd.DataFrame({"prediction": np.full(len(X), 100.0)}, index=X.index)
+
+        with (
+            patch.object(svc, "_assemble_features", return_value=(df, features)),
+            patch("runeflow.services.ablation.XGBoostQuantileModel", return_value=_FakeModel()),
+        ):
+            result = svc._backtest(_StageConfig(days_back=7))
+
+        assert result["holdout_hours"] == 7 * 24
+        assert captured["predict_len"] == 7 * 24
+        assert result["train_val_mae"] == 4.0
+        assert result["holdout_mae"] > 0
+        assert result["holdout_rmse"] > 0
 
     def test_unknown_experiment_is_skipped(self, tmp_path):
         from runeflow.services.ablation import AblationService
@@ -2295,13 +2458,12 @@ class TestAblationService:
         svc = AblationService()
         output = tmp_path / "ablation_skip.json"
 
-        with patch("runeflow.services.ablation.inject.instance", return_value=MagicMock()):
-            report = svc.run(
-                zone="NL",
-                stage="A",
-                experiments=["UNKNOWN"],
-                output_path=output,
-            )
+        report = svc.run(
+            zone="NL",
+            stage="A",
+            experiments=["UNKNOWN"],
+            output_path=output,
+        )
 
         assert output.exists()
         assert report["experiments"][0]["status"] == "skipped"

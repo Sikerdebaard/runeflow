@@ -2,7 +2,18 @@
 # Copyright (C) 2024-2026 Thomas Phil — runeflow
 # See LICENSE and COMMERCIAL-LICENSE.md for licensing details.
 
-"""AblationService — cheap-first E0..E7 experiment runner."""
+"""AblationService — cheap-first E0..E7 experiment runner.
+
+Each experiment re-trains the model **in memory** under a specific feature-flag
+profile and evaluates point-forecast accuracy (MAE/RMSE/bias) on a held-out,
+recent window of *actual* prices.
+
+The runner is deliberately side-effect free with respect to the production
+store: training never calls ``save_model`` and no forecast is written to the
+archive. Evaluation uses a temporal holdout, not the forecast archive, so the
+reported numbers measure the *experiment's* model — not the previously
+deployed one.
+"""
 
 from __future__ import annotations
 
@@ -16,22 +27,33 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import inject
+import numpy as np
+import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import mean_absolute_error
 
-from runeflow.ports.store import DataStore
-from runeflow.services.inference import InferenceService
-from runeflow.services.performance import PerformanceService
-from runeflow.services.train import TrainService
-from runeflow.services.warmup import WarmupService
+from runeflow.models.xgboost_quantile import XGBoostQuantileModel
+from runeflow.services.train import (
+    TARGET_COLUMN,
+    VALIDATION_FRACTION,
+    VALIDATION_GAP_DAYS,
+    TrainService,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class _StageConfig:
-    deterministic_only: bool
-    ensemble_members: int | None
-    days_back: int
+    days_back: int  # holdout window (days of actuals to score against)
+
+
+_STAGE_CONFIGS: dict[str, _StageConfig] = {
+    "A": _StageConfig(days_back=7),
+    "B": _StageConfig(days_back=30),
+    "C": _StageConfig(days_back=60),
+    "D": _StageConfig(days_back=90),
+}
 
 
 @dataclass(frozen=True)
@@ -41,13 +63,6 @@ class _Profile:
     flags: dict[str, bool]
 
 
-_STAGE_CONFIGS: dict[str, _StageConfig] = {
-    "A": _StageConfig(deterministic_only=True, ensemble_members=0, days_back=7),
-    "B": _StageConfig(deterministic_only=True, ensemble_members=0, days_back=30),
-    "C": _StageConfig(deterministic_only=False, ensemble_members=5, days_back=30),
-    "D": _StageConfig(deterministic_only=False, ensemble_members=None, days_back=30),
-}
-
 _PROFILES: dict[str, _Profile] = {
     # Legacy-ish baseline (new feature blocks disabled)
     "E0": _Profile(
@@ -56,7 +71,6 @@ _PROFILES: dict[str, _Profile] = {
         flags={
             "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": False,
             "RUNEFLOW_ENABLE_SPREAD_FEATURES": False,
-            "RUNEFLOW_ENABLE_DIESEL_CRACK": False,
             "RUNEFLOW_ENABLE_MARKET_STRESS": False,
             "RUNEFLOW_ENABLE_DATACENTER_PROXY": False,
         },
@@ -67,7 +81,6 @@ _PROFILES: dict[str, _Profile] = {
         flags={
             "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": True,
             "RUNEFLOW_ENABLE_SPREAD_FEATURES": False,
-            "RUNEFLOW_ENABLE_DIESEL_CRACK": False,
             "RUNEFLOW_ENABLE_MARKET_STRESS": False,
             "RUNEFLOW_ENABLE_DATACENTER_PROXY": False,
         },
@@ -78,7 +91,6 @@ _PROFILES: dict[str, _Profile] = {
         flags={
             "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": False,
             "RUNEFLOW_ENABLE_SPREAD_FEATURES": True,
-            "RUNEFLOW_ENABLE_DIESEL_CRACK": True,
             "RUNEFLOW_ENABLE_MARKET_STRESS": False,
             "RUNEFLOW_ENABLE_DATACENTER_PROXY": False,
         },
@@ -89,7 +101,6 @@ _PROFILES: dict[str, _Profile] = {
         flags={
             "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": False,
             "RUNEFLOW_ENABLE_SPREAD_FEATURES": True,
-            "RUNEFLOW_ENABLE_DIESEL_CRACK": False,
             "RUNEFLOW_ENABLE_MARKET_STRESS": True,
             "RUNEFLOW_ENABLE_DATACENTER_PROXY": False,
         },
@@ -100,7 +111,6 @@ _PROFILES: dict[str, _Profile] = {
         flags={
             "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": False,
             "RUNEFLOW_ENABLE_SPREAD_FEATURES": False,
-            "RUNEFLOW_ENABLE_DIESEL_CRACK": False,
             "RUNEFLOW_ENABLE_MARKET_STRESS": False,
             "RUNEFLOW_ENABLE_DATACENTER_PROXY": True,
         },
@@ -111,7 +121,6 @@ _PROFILES: dict[str, _Profile] = {
         flags={
             "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": True,
             "RUNEFLOW_ENABLE_SPREAD_FEATURES": True,
-            "RUNEFLOW_ENABLE_DIESEL_CRACK": True,
             "RUNEFLOW_ENABLE_MARKET_STRESS": False,
             "RUNEFLOW_ENABLE_DATACENTER_PROXY": False,
         },
@@ -122,7 +131,6 @@ _PROFILES: dict[str, _Profile] = {
         flags={
             "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": True,
             "RUNEFLOW_ENABLE_SPREAD_FEATURES": True,
-            "RUNEFLOW_ENABLE_DIESEL_CRACK": True,
             "RUNEFLOW_ENABLE_MARKET_STRESS": True,
             "RUNEFLOW_ENABLE_DATACENTER_PROXY": False,
         },
@@ -133,7 +141,6 @@ _PROFILES: dict[str, _Profile] = {
         flags={
             "RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL": True,
             "RUNEFLOW_ENABLE_SPREAD_FEATURES": True,
-            "RUNEFLOW_ENABLE_DIESEL_CRACK": True,
             "RUNEFLOW_ENABLE_MARKET_STRESS": True,
             "RUNEFLOW_ENABLE_DATACENTER_PROXY": True,
         },
@@ -157,7 +164,7 @@ def _env_flags(flags: dict[str, bool]) -> Iterator[None]:
 
 
 class AblationService:
-    """Run predefined ablation experiments under staged compute budgets."""
+    """Run predefined ablation experiments under staged holdout windows."""
 
     @staticmethod
     def available_profiles() -> list[str]:
@@ -167,6 +174,73 @@ class AblationService:
     def available_stages() -> list[str]:
         return list(_STAGE_CONFIGS.keys())
 
+    # ------------------------------------------------------------------
+    def _assemble_features(self) -> tuple[pd.DataFrame, list[str]]:
+        """Assemble + engineer the feature frame (read-only wrt the store)."""
+        train_svc: TrainService = TrainService()
+        zone = train_svc._zone_cfg.zone
+        df = train_svc._assemble_training_frame(zone)
+        return train_svc._engineer_and_select_features(df)
+
+    # ------------------------------------------------------------------
+    def _backtest(self, stage_cfg: _StageConfig) -> dict[str, Any]:
+        """Train in memory on the historical frame and score a recent holdout."""
+        df, features = self._assemble_features()
+        X = df[features]
+        y = df[TARGET_COLUMN]
+
+        holdout_hours = stage_cfg.days_back * 24
+        if len(df) <= holdout_hours + 24:
+            raise RuntimeError(
+                f"Not enough historical data for a {stage_cfg.days_back}-day holdout "
+                f"(have {len(df)} rows)"
+            )
+
+        X_train, X_hold = X.iloc[:-holdout_hours], X.iloc[-holdout_hours:]
+        y_train, y_hold = y.iloc[:-holdout_hours], y.iloc[-holdout_hours:]
+
+        imputer = SimpleImputer(strategy="mean")
+        X_train_imp = pd.DataFrame(
+            imputer.fit_transform(X_train), columns=features, index=X_train.index
+        )
+        X_hold_imp = pd.DataFrame(imputer.transform(X_hold), columns=features, index=X_hold.index)
+
+        # Internal train/val split (with a temporal gap) for early stopping and
+        # conformal calibration — mirrors the production training path.
+        n_val = max(1, int(len(X_train_imp) * VALIDATION_FRACTION))
+        gap_rows = int(VALIDATION_GAP_DAYS * 24)
+        if n_val + gap_rows >= len(X_train_imp):
+            gap_rows = 0
+        X_tr = X_train_imp.iloc[: -(n_val + gap_rows)]
+        X_va = X_train_imp.iloc[-n_val:]
+        y_tr = y_train.iloc[: -(n_val + gap_rows)]
+        y_va = y_train.iloc[-n_val:]
+
+        sample_weight = TrainService._compute_sample_weights(y_tr)
+
+        model = XGBoostQuantileModel()
+        train_metrics = model.train(X_tr, y_tr, X_va, y_va, sample_weight)
+
+        preds = model.predict(X_hold_imp)
+        y_pred = preds["prediction"].to_numpy(dtype=float)
+        y_true = y_hold.to_numpy(dtype=float)
+
+        mae = float(mean_absolute_error(y_true, y_pred))
+        rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+        bias = float(np.mean(y_pred - y_true))
+
+        return {
+            "n_train_hours": int(len(X_train_imp)),
+            "holdout_hours": holdout_hours,
+            "train_val_mae": train_metrics.get("mae"),
+            "train_val_r2": train_metrics.get("r2"),
+            "train_val_coverage": train_metrics.get("coverage"),
+            "holdout_mae": mae,
+            "holdout_rmse": rmse,
+            "holdout_bias": bias,
+        }
+
+    # ------------------------------------------------------------------
     def run(
         self,
         *,
@@ -186,36 +260,20 @@ class AblationService:
         report: dict[str, Any] = {
             "zone": zone,
             "stage": stage,
-            "stage_config": {
-                "deterministic_only": stage_cfg.deterministic_only,
-                "ensemble_members": stage_cfg.ensemble_members,
-                "days_back": stage_cfg.days_back,
-            },
+            "stage_config": {"days_back": stage_cfg.days_back},
             "started_at": now.isoformat(),
             "experiments": [],
         }
-
-        store: DataStore = inject.instance(DataStore)  # type: ignore[assignment]
 
         for key in experiments:
             profile = _PROFILES.get(key)
             if profile is None:
                 report["experiments"].append(
-                    {
-                        "key": key,
-                        "status": "skipped",
-                        "reason": "unknown_experiment_key",
-                    }
+                    {"key": key, "status": "skipped", "reason": "unknown_experiment_key"}
                 )
                 continue
 
             logger.info("Ablation %s (%s): starting", profile.key, profile.description)
-            enabled_flags = [name for name, enabled in profile.flags.items() if enabled]
-            logger.info(
-                "Ablation %s: active feature flags = %s",
-                profile.key,
-                ", ".join(enabled_flags) if enabled_flags else "none",
-            )
             exp_rec: dict[str, Any] = {
                 "key": profile.key,
                 "description": profile.description,
@@ -224,56 +282,11 @@ class AblationService:
 
             try:
                 with _env_flags(profile.flags):
-                    train_result = TrainService().run()
-                    WarmupService().run(force=True)
-
-                    forecast = InferenceService().run(
-                        deterministic_only=stage_cfg.deterministic_only,
-                        ensemble_member_limit=stage_cfg.ensemble_members,
-                    )
-                    store.save_forecast(forecast)
-
-                    perf = PerformanceService().compute_zone_performance(
-                        days_back=stage_cfg.days_back,
-                    )
-
-                xgb_metrics = train_result.metrics.get("xgboost_quantile", {})
-                horizon = {
-                    h.horizon_label: {
-                        "mae": h.mae,
-                        "rmse": h.rmse,
-                        "n_hours": h.n_hours,
-                    }
-                    for h in perf.horizon_metrics
-                }
-
-                exp_rec.update(
-                    {
-                        "status": "ok",
-                        "train": {
-                            "model_version": train_result.model_version,
-                            "mae": xgb_metrics.get("mae"),
-                            "r2": xgb_metrics.get("r2"),
-                            "coverage": xgb_metrics.get("coverage"),
-                        },
-                        "performance": {
-                            "overall_mae": perf.overall_mae,
-                            "overall_rmse": perf.overall_rmse,
-                            "ensemble_coverage_pct": perf.ensemble_coverage_pct,
-                            "n_archived_forecasts": perf.n_archived_forecasts,
-                            "n_comparable_hours": perf.n_comparable_hours,
-                            "horizon": horizon,
-                        },
-                    }
-                )
+                    backtest = self._backtest(stage_cfg)
+                exp_rec.update({"status": "ok", "backtest": backtest})
             except Exception as exc:
                 logger.exception("Ablation %s failed", profile.key)
-                exp_rec.update(
-                    {
-                        "status": "failed",
-                        "error": str(exc),
-                    }
-                )
+                exp_rec.update({"status": "failed", "error": str(exc)})
 
             report["experiments"].append(exp_rec)
 

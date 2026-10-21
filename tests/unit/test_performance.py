@@ -331,6 +331,25 @@ class TestPerformanceService:
         assert perf.overall_mae is not None
         assert perf.overall_mae == pytest.approx(2.0, abs=1e-6)
 
+    def test_computes_bias_with_matching_actuals(self, nl_zone_cfg):
+        from runeflow.services.performance import PerformanceService
+
+        created = pd.Timestamp("2024-01-01 00:00:00", tz="UTC")
+        # Forecast predicts 55, actuals are 50 → bias = +5 (overprediction).
+        forecast = _make_forecast_result(created_at=created, n=24, base_price=55.0)
+
+        ts = pd.date_range("2024-01-01", periods=48, freq="h", tz="UTC")
+        records = tuple(PriceRecord(timestamp=t, price_eur_mwh=50.0) for t in ts)
+        prices = PriceSeries(
+            zone="NL", records=records, source="test", fetched_at=pd.Timestamp.now("UTC")
+        )
+
+        store = self._make_store(archives=[forecast], prices=prices)
+        svc = PerformanceService(zone_cfg=nl_zone_cfg, store=store)
+        perf = svc.compute_zone_performance()
+
+        assert perf.overall_bias == pytest.approx(5.0, abs=1e-6)
+
     def test_horizon_metrics_bucketing(self, nl_zone_cfg):
         from runeflow.services.performance import PerformanceService
 
@@ -453,6 +472,7 @@ class TestExportPerformanceService:
         perf.zone_name = "Netherlands"
         perf.overall_mae = 5.0
         perf.overall_rmse = 6.5
+        perf.overall_bias = 0.5
         perf.ensemble_coverage_pct = 45.0
         perf.n_archived_forecasts = 10
         perf.n_comparable_hours = 200

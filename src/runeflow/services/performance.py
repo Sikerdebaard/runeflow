@@ -79,12 +79,14 @@ class PerformanceService:
 
         overall_mae: float | None = None
         overall_rmse: float | None = None
+        overall_bias: float | None = None
         total_hours = sum(a.n_comparable_hours for a in accuracies)
         if accuracies and total_hours > 0:
             overall_mae = sum(a.mae * a.n_comparable_hours for a in accuracies) / total_hours
             overall_rmse = math.sqrt(
                 sum((a.rmse**2) * a.n_comparable_hours for a in accuracies) / total_hours
             )
+            overall_bias = sum(a.bias * a.n_comparable_hours for a in accuracies) / total_hours
 
         return ZonePerformance(
             zone=zone,
@@ -98,6 +100,7 @@ class PerformanceService:
             n_archived_forecasts=len(archives),
             n_comparable_hours=total_hours,
             generated_at=pd.Timestamp.now("UTC"),
+            overall_bias=overall_bias,
         )
 
     # ------------------------------------------------------------------
@@ -112,6 +115,7 @@ class PerformanceService:
         list of ``(horizon_hours, abs_error, actual, predicted)`` tuples.
         """
         errors: list[float] = []
+        signed_errors: list[float] = []
         horizon_data: list[tuple[float, float, float, float]] = []
         agreements: list[float] = []
         directions_correct = 0
@@ -140,6 +144,7 @@ class PerformanceService:
             pred = float(pt.prediction)
             error = abs(pred - actual)
             errors.append(error)
+            signed_errors.append(pred - actual)
 
             horizon_h = (ts - forecast.created_at).total_seconds() / 3600
             horizon_data.append((horizon_h, error, actual, pred))
@@ -164,6 +169,7 @@ class PerformanceService:
         n = len(errors)
         mae = sum(errors) / n
         rmse = math.sqrt(sum(e**2 for e in errors) / n)
+        bias = sum(signed_errors) / n
 
         nonzero = [(d[3], d[2]) for d in horizon_data if d[2] != 0.0]
         mape: float | None = (
@@ -181,6 +187,7 @@ class PerformanceService:
             mape=mape,
             directional_accuracy=directions_correct / directions_total if directions_total else 0.0,
             mean_model_agreement=sum(agreements) / len(agreements) if agreements else 0.0,
+            bias=bias,
         ), horizon_data
 
     # ------------------------------------------------------------------
