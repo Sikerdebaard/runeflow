@@ -21,12 +21,6 @@ Three free data sources, each chosen for European energy market relevance:
   frequency, forward-filled to hourly.  No API key required.
   Column: ``commodity_coal_usd_t``.
 
-* **Diesel (optional)** — `FRED <https://fred.stlouisfed.org>`_ series
-    ``GASDESW`` (U.S. Gulf Coast ultra-low sulfur diesel spot price,
-    USD/gal), daily frequency, forward-filled to hourly.  This acts as a
-    robust macro proxy when European diesel benchmarks are unavailable.
-    Column: ``commodity_diesel_usd_gal``.
-
 Disk caching
 ------------
 Completed calendar years are persisted as Parquet files under
@@ -61,7 +55,6 @@ _BRENT_TICKER = "BZ=F"
 _FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 _FRED_BRENT_SERIES = "DCOILBRENTEU"  # USD/bbl, daily
 _FRED_COAL_SERIES = "PCOALAUUSDM"  # USD/metric ton, monthly
-_FRED_DIESEL_SERIES = "GASDESW"  # USD/gallon, daily (ULSD)
 
 # TTL for the current-year in-memory cache (seconds).
 _CURRENT_YEAR_TTL = 86_400  # 24 hours
@@ -175,12 +168,6 @@ class CommodityAdapter(CommodityPricePort):
         else:
             logger.debug("No FRED coal data for %d", year)
 
-        diesel = self._fetch_diesel_fred(y_start, y_end)
-        if diesel is not None and not diesel.empty:
-            series["commodity_diesel_usd_gal"] = diesel
-        else:
-            logger.debug("No FRED diesel data for %d", year)
-
         if not series:
             return None
 
@@ -287,10 +274,6 @@ class CommodityAdapter(CommodityPricePort):
         # Pull from one month before the year start so ffill has a seed value
         lead_start = (datetime.date(start.year, 1, 1) - datetime.timedelta(days=32)).replace(day=1)
         return self._fetch_fred_csv(_FRED_COAL_SERIES, lead_start, end, "commodity_coal_usd_t")
-
-    def _fetch_diesel_fred(self, start: datetime.date, end: datetime.date) -> pd.Series | None:
-        """Fetch daily ULSD diesel spot from FRED GASDESW (USD/gal)."""
-        return self._fetch_fred_csv(_FRED_DIESEL_SERIES, start, end, "commodity_diesel_usd_gal")
 
     def _fetch_fred_csv(
         self,

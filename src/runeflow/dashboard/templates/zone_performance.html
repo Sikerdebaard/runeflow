@@ -26,6 +26,10 @@
     <div class="perf-stat-label">RMSE (EUR/MWh)</div>
   </div>
   <div class="perf-stat">
+    <div class="perf-stat-value">{% if performance.overall_bias is not none %}{{ "%+.2f"|format(performance.overall_bias) }}{% else %}&mdash;{% endif %}</div>
+    <div class="perf-stat-label">Bias (EUR/MWh)</div>
+  </div>
+  <div class="perf-stat">
     <div class="perf-stat-value">{% if performance.ensemble_coverage_pct is not none %}{{ "%.1f"|format(performance.ensemble_coverage_pct) }}%{% else %}&mdash;{% endif %}</div>
     <div class="perf-stat-label">P25–P75 Coverage</div>
   </div>

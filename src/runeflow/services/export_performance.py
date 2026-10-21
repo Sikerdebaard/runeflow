@@ -121,6 +121,7 @@ class ExportPerformanceService:
             "zone_name": perf.zone_name,
             "overall_mae": _safe(perf.overall_mae),
             "overall_rmse": _safe(perf.overall_rmse),
+            "overall_bias": _safe(perf.overall_bias),
             "overall_directional_accuracy": _safe(overall_directional_accuracy),
             "latest_r2": latest_r2,
             "ensemble_coverage_pct": _safe(perf.ensemble_coverage_pct),
@@ -147,6 +148,7 @@ class ExportPerformanceService:
                     "mae": _safe(a.mae),
                     "rmse": _safe(a.rmse),
                     "mape": _safe(a.mape),
+                    "bias": _safe(a.bias),
                     "directional_accuracy": _safe(a.directional_accuracy),
                     "mean_model_agreement": _safe(a.mean_model_agreement),
                 }

@@ -6,21 +6,13 @@
 
 from __future__ import annotations
 
-import os
-
 import numpy as np
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
 
 from .base import FeatureGroup
-
-
-def _flag_enabled(name: str, default: bool = True) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() not in {"0", "false", "no", "off"}
+from .flags import feature_flag_enabled
 
 
 class TemporalFeatures(FeatureGroup):
@@ -30,19 +22,24 @@ class TemporalFeatures(FeatureGroup):
 
     @property
     def produces(self) -> tuple[str, ...]:
-        return (
+        cols = [
             "hour_of_day",
             "day_of_week",
             "day_of_year",
             "month",
             "is_weekend",
             "season",
-            "hour_sin",
-            "hour_cos",
-            "dow_sin",
-            "dow_cos",
-            "doy_sin",
-            "doy_cos",
+        ]
+        if feature_flag_enabled("RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL"):
+            cols += [
+                "hour_sin",
+                "hour_cos",
+                "dow_sin",
+                "dow_cos",
+                "doy_sin",
+                "doy_cos",
+            ]
+        cols += [
             "is_morning_ramp",
             "is_solar_midday",
             "is_evening_peak",
@@ -50,7 +47,8 @@ class TemporalFeatures(FeatureGroup):
             "is_solar_cliff",
             "is_peak_hour",
             "is_overnight",
-        )
+        ]
+        return tuple(cols)
 
     def transform(self, df: pd.DataFrame, zone_cfg: ZoneConfig) -> pd.DataFrame:
         df = self._copy(df)
@@ -64,7 +62,7 @@ class TemporalFeatures(FeatureGroup):
         # 1=Winter, 2=Spring, 3=Summer, 4=Fall
         df["season"] = (idx.month % 12 + 3) // 3  # type: ignore[attr-defined]
 
-        if _flag_enabled("RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL", default=True):
+        if feature_flag_enabled("RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL"):
             # Cyclical calendar encoding avoids discontinuities at boundaries.
             hour = df["hour_of_day"].astype(float)
             dow = df["day_of_week"].astype(float)

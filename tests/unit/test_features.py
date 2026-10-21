@@ -94,12 +94,23 @@ class TestTemporalFeatures:
         overlap = (out["is_peak_hour"] == 1) & (out["is_overnight"] == 1)
         assert not overlap.any()
 
-    def test_cyclical_columns_present_and_bounded(self, zone_cfg_nl):
+    def test_cyclical_columns_present_and_bounded(self, zone_cfg_nl, monkeypatch):
+        monkeypatch.setenv("RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL", "1")
         df = _make_df()
         out = TemporalFeatures().transform(df, zone_cfg_nl)
         for col in ("hour_sin", "hour_cos", "dow_sin", "dow_cos", "doy_sin", "doy_cos"):
             assert col in out.columns
             assert out[col].between(-1.000001, 1.000001).all()
+
+    def test_cyclical_columns_off_by_default(self, zone_cfg_nl, monkeypatch):
+        monkeypatch.delenv("RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL", raising=False)
+        df = _make_df()
+        out = TemporalFeatures().transform(df, zone_cfg_nl)
+        assert "hour_sin" not in out.columns
+        assert "hour_cos" not in out.columns
+        assert "doy_cos" not in out.columns
+        # Non-gated calendar columns are still produced.
+        assert "day_of_year" in out.columns
 
 
 # ── PriceLagFeatures ─────────────────────────────────────────────────────────
@@ -396,9 +407,10 @@ class TestGenerationForecastFeatures:
         GenerationForecastFeatures().transform(df, zone_cfg_nl)
         assert set(df.columns) == cols_before
 
-    def test_baseload_and_datacenter_features(self, zone_cfg_nl):
+    def test_baseload_and_datacenter_features(self, zone_cfg_nl, monkeypatch):
         from runeflow.features.generation import GenerationForecastFeatures
 
+        monkeypatch.setenv("RUNEFLOW_ENABLE_DATACENTER_PROXY", "1")
         n = 24 * 40
         df = _make_df(n)
         df["load_forecast_mw"] = 12_000 + np.linspace(0, 500, n)
@@ -408,6 +420,17 @@ class TestGenerationForecastFeatures:
         assert "baseload_trend_30d" in out.columns
         assert "baseload_trend_90d" in out.columns
         assert "datacenter_pressure_proxy" in out.columns
+
+    def test_baseload_features_off_by_default(self, zone_cfg_nl, monkeypatch):
+        from runeflow.features.generation import GenerationForecastFeatures
+
+        monkeypatch.delenv("RUNEFLOW_ENABLE_DATACENTER_PROXY", raising=False)
+        n = 24 * 40
+        df = _make_df(n)
+        df["load_forecast_mw"] = 12_000 + np.linspace(0, 500, n)
+        out = GenerationForecastFeatures().transform(df, zone_cfg_nl)
+        assert "baseload_min_rolling" not in out.columns
+        assert "datacenter_pressure_proxy" not in out.columns
 
 
 # ── CrossBorderFeatures ──────────────────────────────────────────────────────
@@ -826,9 +849,14 @@ class TestInteractionEarlyReturn:
 
 
 class TestCommodityFeaturesExtra:
-    def test_diesel_crack_and_stress_features(self, zone_cfg_nl):
+    def _enable_all_flags(self, monkeypatch):
+        monkeypatch.setenv("RUNEFLOW_ENABLE_SPREAD_FEATURES", "1")
+        monkeypatch.setenv("RUNEFLOW_ENABLE_MARKET_STRESS", "1")
+
+    def test_spread_and_stress_features(self, zone_cfg_nl, monkeypatch):
         from runeflow.features.commodity import CommodityPriceFeatures
 
+        self._enable_all_flags(monkeypatch)
         n = 24 * 60
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
         df = pd.DataFrame(
@@ -837,20 +865,47 @@ class TestCommodityFeaturesExtra:
                 "commodity_brent_usd_bbl": 80 + np.sin(np.linspace(0, 10, n)) * 4,
                 "commodity_gas_eu_eur_mwh": 35 + np.sin(np.linspace(0, 16, n)) * 3,
                 "commodity_coal_usd_t": 120 + np.sin(np.linspace(0, 6, n)) * 2,
-                "commodity_diesel_usd_gal": 2.8 + np.sin(np.linspace(0, 11, n)) * 0.2,
             },
             index=idx,
         )
         out = CommodityPriceFeatures().transform(df, zone_cfg_nl)
 
-        assert "diesel_crack_spread_level" in out.columns
-        assert "diesel_crack_spread_z_30d" in out.columns
-        assert "diesel_crack_stress_regime" in out.columns
+        assert "gas_power_cost_proxy" in out.columns
+        assert "gas_shock_24h" in out.columns
+        assert "fuel_cost_proxy" in out.columns
         assert "market_stress_index" in out.columns
         assert "stress_regime" in out.columns
 
-    def test_diesel_proxy_when_missing_diesel_series(self, zone_cfg_nl):
+    def test_diesel_features_removed(self, zone_cfg_nl, monkeypatch):
         from runeflow.features.commodity import CommodityPriceFeatures
+
+        self._enable_all_flags(monkeypatch)
+        n = 24 * 40
+        idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
+        df = pd.DataFrame(
+            {
+                "Price_EUR_MWh": 65 + np.random.default_rng(2).standard_normal(n) * 4,
+                "commodity_brent_usd_bbl": 82 + np.sin(np.linspace(0, 8, n)) * 3,
+                "commodity_gas_eu_eur_mwh": 30 + np.sin(np.linspace(0, 8, n)) * 2,
+                # A stray diesel column (e.g. from an old cache) must not be
+                # expanded into diesel-derived features.
+                "commodity_diesel_usd_gal": 2.8 + np.sin(np.linspace(0, 11, n)) * 0.2,
+            },
+            index=idx,
+        )
+        out = CommodityPriceFeatures().transform(df, zone_cfg_nl)
+        assert "commodity_diesel_oil_ratio" not in out.columns
+        assert "commodity_diesel_usd_gal_lag_24h" not in out.columns
+        assert "diesel_crack_spread_level" not in out.columns
+
+    def test_new_blocks_off_by_default(self, zone_cfg_nl, monkeypatch):
+        from runeflow.features.commodity import CommodityPriceFeatures
+
+        for flag in (
+            "RUNEFLOW_ENABLE_SPREAD_FEATURES",
+            "RUNEFLOW_ENABLE_MARKET_STRESS",
+        ):
+            monkeypatch.delenv(flag, raising=False)
 
         n = 24 * 40
         idx = pd.date_range("2024-01-01", periods=n, freq="h", tz="UTC")
@@ -859,18 +914,17 @@ class TestCommodityFeaturesExtra:
                 "Price_EUR_MWh": 65 + np.random.default_rng(2).standard_normal(n) * 4,
                 "commodity_brent_usd_bbl": 82 + np.sin(np.linspace(0, 8, n)) * 3,
                 "commodity_gas_eu_eur_mwh": 30 + np.sin(np.linspace(0, 8, n)) * 2,
+                "commodity_coal_usd_t": 120 + np.sin(np.linspace(0, 6, n)) * 2,
             },
             index=idx,
         )
         out = CommodityPriceFeatures().transform(df, zone_cfg_nl)
-        assert "diesel_crack_spread_level" in out.columns
-        assert "diesel_data_quality_flag" in out.columns
-        # Derived proxy path should mark quality=0 where computed.
-        assert (out["diesel_data_quality_flag"].dropna() == 0).all()
+        assert "gas_power_cost_proxy" not in out.columns
+        assert "market_stress_index" not in out.columns
 
 
 class TestInteractionFeaturesExtra:
-    def test_diesel_and_datacenter_interactions(self, zone_cfg_nl):
+    def test_datacenter_interaction(self, zone_cfg_nl):
         from runeflow.features.interaction import PeakInteractionFeatures
 
         n = 24 * 5
@@ -878,18 +932,14 @@ class TestInteractionFeaturesExtra:
         df = pd.DataFrame(
             {
                 "is_peak_hour": (idx.hour.isin([17, 18, 19, 20])).astype(int),  # type: ignore[attr-defined]
-                "diesel_crack_spread_level": np.linspace(1.0, 2.0, n),
-                "wind_scarcity": np.linspace(0.1, 2.0, n),
-                "market_stress_index": np.linspace(0.5, 1.5, n),
                 "datacenter_pressure_proxy": np.linspace(-1.0, 1.0, n),
             },
             index=idx,
         )
         out = PeakInteractionFeatures().transform(df, zone_cfg_nl)
-        assert "diesel_crack_x_peak_hour" in out.columns
-        assert "diesel_crack_x_low_wind" in out.columns
-        assert "diesel_crack_x_market_stress" in out.columns
         assert "datacenter_pressure_x_peak" in out.columns
+        # Diesel interaction features were removed along with the US diesel proxy.
+        assert "diesel_crack_x_peak_hour" not in out.columns
 
 
 class TestDuckCurveEarlyReturn:
