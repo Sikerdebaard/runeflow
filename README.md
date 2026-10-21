@@ -49,10 +49,22 @@ runeflow inference   --zone NL
 | `runeflow list-markets` | List all registered market zones |
 | `runeflow update-data --zone NL` | Download and cache prices, weather, generation and supplemental data |
 | `runeflow train --zone NL` | Train the price-prediction ensemble |
+| `runeflow train --zone NL --force` | Train and promote even if the new model is worse than the deployed one |
 | `runeflow warmup-cache --zone NL` | Build the feature warmup cache required for inference |
 | `runeflow inference --zone NL` | Generate a 9-day price forecast |
+| `runeflow run-ablation --zone NL --stage A` | Backtest E0..E7 feature-flag profiles against a recent holdout |
+| `runeflow export-performance` | Write retrospective accuracy metrics (`site/api/performance.json`) |
 | `runeflow export-tariffs --zone NL --provider vattenfall` | Export forecast as tariff JSON |
 | `runeflow plot-uncertainty --zone NL` | Plot the uncertainty forecast band (3-panel chart) |
+
+### Model promotion guardrail
+
+`runeflow train` trains the ensemble in memory and only writes it to the store when
+its validation MAE is no more than 15 % worse than the currently deployed model's last
+recorded MAE. If the candidate is rejected it is **not** saved; use `--force` to
+override (e.g. for an explicit rollback). The authoritative before/after comparison is
+`runeflow run-ablation`, which re-trains under each feature-flag profile and scores a
+recent held-out window of actuals (7/30/60/90-day stages).
 
 ## Architecture
 

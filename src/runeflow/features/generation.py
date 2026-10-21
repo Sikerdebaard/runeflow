@@ -7,22 +7,15 @@
 from __future__ import annotations
 
 import logging
-import os
 
 import pandas as pd
 
 from runeflow.zones.config import ZoneConfig
 
 from .base import FeatureGroup
+from .flags import feature_flag_enabled
 
 logger = logging.getLogger(__name__)
-
-
-def _flag_enabled(name: str, default: bool = True) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
 # Columns present in historical generation data but NOT available during inference.
@@ -85,7 +78,7 @@ class GenerationForecastFeatures(FeatureGroup):
                     df["load_forecast_mw"] - df["forecast_total_renewable_mw"]
                 )
 
-            if _flag_enabled("RUNEFLOW_ENABLE_DATACENTER_PROXY", default=True):
+            if feature_flag_enabled("RUNEFLOW_ENABLE_DATACENTER_PROXY"):
                 # Baseload and non-weather load proxy signals (AI/datacenter pressure).
                 overnight_mask = df.index.hour.isin([0, 1, 2, 3, 4, 5]).astype(float)  # type: ignore[attr-defined]
                 overnight_load = df["load_forecast_mw"].where(overnight_mask > 0)

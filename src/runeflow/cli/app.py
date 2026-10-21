@@ -110,19 +110,28 @@ def update_data(
 @app.command("train")
 def train(
     zone: str = typer.Option("NL", "--zone", "-z", help="Market zone"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Promote even if the new model is worse than the deployed model",
+    ),
 ) -> None:
     """Train the price-prediction ensemble for a zone."""
     _setup(zone)
     from runeflow.services.train import TrainService
 
     svc = TrainService()
-    result = svc.run()
+    result = svc.run(force=force)
     xgb = result.metrics.get("xgboost_quantile", {})
     typer.echo(
         f"✓ Training complete — MAE={xgb.get('mae', 'n/a'):.4f}  "
         f"R²={xgb.get('r2', 'n/a'):.4f}  "
         f"Coverage={xgb.get('coverage', 'n/a'):.1f}%"
     )
+    promoted = result.quality_assessment.get("promoted")
+    if promoted is False:
+        reason = result.quality_assessment.get("promotion_reason", "unknown")
+        typer.echo(f"⚠ Model NOT promoted: {reason} (use --force to override)")
 
 
 @app.command("warmup-cache")
@@ -186,8 +195,8 @@ def run_ablation(
         "A",
         "--stage",
         help=(
-            "Compute stage: A (cheap short deterministic), B (deterministic full "
-            "window), C (reduced ensemble), D (full ensemble)"
+            "Holdout window: A (7-day), B (30-day), C (60-day), D (90-day). "
+            "Each stage re-trains in memory and scores the recent holdout window."
         ),
     ),
     experiments: str = typer.Option(
@@ -202,7 +211,7 @@ def run_ablation(
         help="Output JSON path",
     ),
 ) -> None:
-    """Run staged ablation experiments (E0..E7) with cheap-first controls."""
+    """Run staged ablation experiments (E0..E7) with a recent-holdout backtest."""
     _setup(zone)
     from runeflow.services.ablation import AblationService
 

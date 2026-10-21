@@ -37,6 +37,14 @@ services:
       # Optional: Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
+      # Feature blocks validated by ablation (run-ablation --zone NL --stage C).
+      # CYCLICAL_TEMPORAL: sin/cos hour/dow/doy encodings — consistently best across all holdout windows.
+      # All other blocks showed no improvement or degraded performance on NL; leave them 0.
+      - RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL=${RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL:-1}
+      - RUNEFLOW_ENABLE_SPREAD_FEATURES=${RUNEFLOW_ENABLE_SPREAD_FEATURES:-0}
+      - RUNEFLOW_ENABLE_MARKET_STRESS=${RUNEFLOW_ENABLE_MARKET_STRESS:-0}
+      - RUNEFLOW_ENABLE_DATACENTER_PROXY=${RUNEFLOW_ENABLE_DATACENTER_PROXY:-0}
+
       # Optional: Self-hosted Open-Meteo (see --profile open-meteo)
       # Both deterministic (ifs025) and ensemble (ifs025_ensemble) data can be
       # self-hosted. Set OPENMETEO_FORECAST_API and/or OPENMETEO_ENSEMBLE_API
@@ -91,6 +99,14 @@ services:
 
       # Optional: Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+      # Feature blocks validated by ablation (run-ablation --zone NL --stage C).
+      # CYCLICAL_TEMPORAL: sin/cos hour/dow/doy encodings — consistently best across all holdout windows.
+      # All other blocks showed no improvement or degraded performance on NL; leave them 0.
+      - RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL=${RUNEFLOW_ENABLE_CYCLICAL_TEMPORAL:-1}
+      - RUNEFLOW_ENABLE_SPREAD_FEATURES=${RUNEFLOW_ENABLE_SPREAD_FEATURES:-0}
+      - RUNEFLOW_ENABLE_MARKET_STRESS=${RUNEFLOW_ENABLE_MARKET_STRESS:-0}
+      - RUNEFLOW_ENABLE_DATACENTER_PROXY=${RUNEFLOW_ENABLE_DATACENTER_PROXY:-0}
 
       # Optional: Self-hosted Open-Meteo (see --profile open-meteo)
       # Both deterministic (ifs025) and ensemble (ifs025_ensemble) data can be

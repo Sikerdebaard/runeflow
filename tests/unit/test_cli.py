@@ -209,6 +209,28 @@ class TestTrainCommand:
             # Exits 0 when metrics are valid floats
             assert result.exit_code == 0
 
+    def test_train_rejection_message_and_force_flag(self):
+        from unittest.mock import MagicMock, patch
+
+        with (
+            patch("runeflow.cli.app._setup"),
+            patch("runeflow.services.train.TrainService") as MockTrain,
+        ):
+            mock_result = MagicMock()
+            mock_result.metrics = {"xgboost_quantile": {"mae": 4.5, "r2": 0.82, "coverage": 94.8}}
+            mock_result.quality_assessment = {
+                "promoted": False,
+                "promotion_reason": "new_mae=20.00 worse than current_mae=10.00 by >15%",
+            }
+            MockTrain.return_value.run.return_value = mock_result
+
+            result = runner.invoke(app, ["train", "--zone", "NL"])
+            assert result.exit_code == 0
+            assert "NOT promoted" in result.output
+
+            runner.invoke(app, ["train", "--zone", "NL", "--force"])
+            MockTrain.return_value.run.assert_called_with(force=True)
+
 
 # ── warmup-cache command ──────────────────────────────────────────────────────
 
