@@ -73,6 +73,10 @@ set -e
 source /app/.env.docker
 export PATH ENTSOE XDG_CACHE_HOME HOME
 
+# Prevent concurrent full runs (e.g. startup bg run overlapping a cron slot).
+exec 202>/tmp/runeflow-inference.lock
+flock -n 202 || { echo "[$(date '+%Y-%m-%d %H:%M:%S')] Full run already in progress — skipping." >> /var/log/runeflow/inference.log; exit 0; }
+
 LOGFILE="/var/log/runeflow/inference.log"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 cd /app
@@ -413,26 +417,32 @@ CRON
 chmod 0644 /etc/cron.d/runeflow
 
 # ---------------------------------------------------------------------------
+# Log rotation — keep inference.log from growing unboundedly (was 12 GB+)
+# ---------------------------------------------------------------------------
+cat > /etc/logrotate.d/runeflow << 'LR'
+/var/log/runeflow/inference.log
+/var/log/runeflow/entsoe-check.log
+/var/log/runeflow/cron.log
+/var/log/runeflow/zone_*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+LR
+# Run logrotate daily at 03:00 Amsterdam time
+echo '0 3 * * * root /usr/sbin/logrotate /etc/logrotate.d/runeflow' >> /etc/cron.d/runeflow
+
+# ---------------------------------------------------------------------------
 # Init log files and output directory
 # ---------------------------------------------------------------------------
 touch /var/log/runeflow/inference.log \
       /var/log/runeflow/entsoe-check.log \
       /var/log/runeflow/cron.log
 mkdir -p "$OUTPUT_DIR" /app/.cache/runeflow
-
-# ---------------------------------------------------------------------------
-# Startup: run once immediately so the output file is available right away
-# ---------------------------------------------------------------------------
-echo "Running initial full pipeline on startup (update-data → train → inference)..."
-echo "On a fresh server with an empty cache this will take several minutes."
-/app/run-inference.sh || {
-    echo ""
-    echo "WARNING: Initial pipeline run failed."
-    echo "This is normal on a completely fresh install where the data cache is empty."
-    echo "The most common cause is a transient API error during 'update-data'."
-    echo "The system will retry automatically at the next scheduled run (08:05, 14:30 and 20:05 AMS)."
-    echo "Check /var/log/runeflow/inference.log for details."
-}
 
 echo ""
 echo "Cron jobs installed:"
@@ -444,6 +454,24 @@ echo "Zones: $ZONES"
 echo "Logs: /var/log/runeflow/"
 echo "Output: $OUTPUT_DIR"
 echo ""
+
+# ---------------------------------------------------------------------------
+# Startup pipeline — skip when outputs are fresh so cron starts immediately
+#
+# A 'fresh' install or a container where the last successful run was more than
+# 25 hours ago gets a background initial run.  This lets cron start right away
+# so the scheduled 08:05 / 14:30 / 20:05 jobs can fire on time even if the
+# initial run takes many hours.
+# ---------------------------------------------------------------------------
+SITE_INDEX="$SITE_OUTPUT_DIR/index.html"
+if [ -f "$SITE_INDEX" ] && find "$SITE_INDEX" -mmin -1500 -print -quit 2>/dev/null | grep -q .; then
+    echo "Site outputs are fresh (< 25 h old) — skipping startup pipeline."
+    echo "Cron will handle the next scheduled run."
+else
+    echo "Running initial full pipeline in background (update-data → train → inference)..."
+    echo "Cron starts immediately; the background run will complete in the log."
+    /app/run-inference.sh >> /var/log/runeflow/inference.log 2>&1 &
+fi
 
 # ---------------------------------------------------------------------------
 # Start cron (foreground) or exec arbitrary command

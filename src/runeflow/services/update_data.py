@@ -105,12 +105,35 @@ class UpdateDataService:
         end = date(years[-1], 12, 31)
         logger.info("Downloading historical weather (%d locations)", len(locations))
 
-        # Skip if the store already has weather data covering the full range.
-        # The hourly weather-refresh cron will retry if data is missing/incomplete.
-        existing = self._store.load_weather(zone, start, end)
-        if existing is not None:
-            logger.info("Historical weather up-to-date for zone=%s, skipping download", zone)
-        else:
+        # Skip only when the cache actually covers the full requested year range.
+        # "any data exists" is not sufficient — the cache end date must be checked.
+        existing = self._store.load_weather(zone)
+        needs_download = True
+        if existing is not None and len(existing.df) > 0:
+            cached_last = existing.df.index[-1]
+            # Normalise both to UTC for comparison; allow 7-day tolerance for minor gaps.
+            cached_last_utc = (
+                pd.Timestamp(cached_last).tz_convert("UTC")
+                if cached_last.tzinfo
+                else pd.Timestamp(cached_last, tz="UTC")
+            )
+            end_utc = pd.Timestamp(end, tz="UTC")
+            if cached_last_utc >= end_utc - pd.Timedelta(days=7):
+                needs_download = False
+                logger.info(
+                    "Historical weather up-to-date for zone=%s (cached through %s)",
+                    zone,
+                    cached_last_utc.date(),
+                )
+            else:
+                logger.info(
+                    "Historical weather cache for zone=%s ends at %s, re-downloading through %s",
+                    zone,
+                    cached_last_utc.date(),
+                    end,
+                )
+
+        if needs_download:
             series = self._weather_port.download_historical(locations, start, end)
             self._store.save_weather(series, zone)
 
