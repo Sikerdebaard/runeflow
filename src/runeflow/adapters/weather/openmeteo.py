@@ -132,6 +132,24 @@ def _biweekly_anchor(d: datetime.date) -> datetime.date:
     return datetime.date.fromordinal((d.toordinal() // 14) * 14)
 
 
+def _mount_timeout_adapter(session: requests.Session, timeout: int = 30) -> None:
+    """Mount a custom HTTPAdapter that enforces a per-request timeout.
+
+    requests.Session has no built-in default timeout; stale cache re-validation
+    requests can therefore hang indefinitely without this adapter.
+    """
+    from requests.adapters import HTTPAdapter
+
+    class _TimeoutAdapter(HTTPAdapter):
+        def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:  # type: ignore[override]
+            kwargs.setdefault("timeout", timeout)
+            return super().send(request, **kwargs)
+
+    adapter = _TimeoutAdapter()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+
 class OpenMeteoAdapter(WeatherPort):
     """Download weather data from Open-Meteo.
 
@@ -170,6 +188,9 @@ class OpenMeteoAdapter(WeatherPort):
                 "https://archive-api.open-meteo.com/*": requests_cache.NEVER_EXPIRE,
             },
         )
+        # Stale cache re-validation has no timeout by default; without one the
+        # session can hang indefinitely waiting for a slow/unresponsive server.
+        _mount_timeout_adapter(cache_session, timeout=30)
         retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
         self._client = openmeteo_requests.Client(session=retry_session)
         # Keep a direct reference to the cache backend for targeted invalidation.
