@@ -111,14 +111,17 @@ class UpdateDataService:
         needs_download = True
         if existing is not None and len(existing.df) > 0:
             cached_last = existing.df.index[-1]
-            # Normalise both to UTC for comparison; allow 7-day tolerance for minor gaps.
+            # Normalise to UTC for comparison.
             cached_last_utc = (
                 pd.Timestamp(cached_last).tz_convert("UTC")
                 if cached_last.tzinfo
                 else pd.Timestamp(cached_last, tz="UTC")
             )
-            end_utc = pd.Timestamp(end, tz="UTC")
-            if cached_last_utc >= end_utc - pd.Timedelta(days=7):
+            # Archive data can only cover up to today, so compare against today
+            # not against end-of-year — otherwise the check always fails and we
+            # re-download on every run (infinite loop).
+            today_utc = pd.Timestamp.now("UTC").normalize()
+            if cached_last_utc >= today_utc - pd.Timedelta(days=7):
                 needs_download = False
                 logger.info(
                     "Historical weather up-to-date for zone=%s (cached through %s)",
