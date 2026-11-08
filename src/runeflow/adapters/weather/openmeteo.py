@@ -20,7 +20,6 @@ import pandas as pd
 import requests
 import requests_cache
 from loguru import logger
-from retry_requests import retry
 
 from runeflow.domain.weather import WeatherLocation, WeatherSeries
 from runeflow.exceptions import DailyRateLimitError, DataUnavailableError, DownloadError
@@ -132,22 +131,39 @@ def _biweekly_anchor(d: datetime.date) -> datetime.date:
     return datetime.date.fromordinal((d.toordinal() // 14) * 14)
 
 
-def _mount_timeout_adapter(session: requests.Session, timeout: int = 30) -> None:
-    """Mount a custom HTTPAdapter that enforces a per-request timeout.
+def _build_session(
+    cache_session: requests_cache.CachedSession,
+    timeout: int = 30,
+    retries: int = 5,
+    backoff_factor: float = 0.2,
+) -> requests_cache.CachedSession:
+    """Mount a combined timeout + retry HTTPAdapter on *cache_session*.
 
-    requests.Session has no built-in default timeout; stale cache re-validation
-    requests can therefore hang indefinitely without this adapter.
+    retry_requests.retry() also calls session.mount(), so if it runs after us
+    it silently replaces our adapter and the timeout is lost.  By doing both
+    in one adapter we avoid the ordering problem entirely.
     """
     from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
 
-    class _TimeoutAdapter(HTTPAdapter):
+    retry_policy = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=(500, 502, 503, 504),
+        allowed_methods=None,  # retry on all HTTP methods
+    )
+
+    class _TimeoutRetryAdapter(HTTPAdapter):
         def send(self, request: requests.PreparedRequest, **kwargs: Any) -> requests.Response:  # type: ignore[override]
             kwargs.setdefault("timeout", timeout)
             return super().send(request, **kwargs)
 
-    adapter = _TimeoutAdapter()
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
+    adapter = _TimeoutRetryAdapter(max_retries=retry_policy)
+    cache_session.mount("https://", adapter)
+    cache_session.mount("http://", adapter)
+    return cache_session
 
 
 class OpenMeteoAdapter(WeatherPort):
@@ -188,11 +204,10 @@ class OpenMeteoAdapter(WeatherPort):
                 "https://archive-api.open-meteo.com/*": requests_cache.NEVER_EXPIRE,
             },
         )
-        # Stale cache re-validation has no timeout by default; without one the
-        # session can hang indefinitely waiting for a slow/unresponsive server.
-        _mount_timeout_adapter(cache_session, timeout=30)
-        retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-        self._client = openmeteo_requests.Client(session=retry_session)
+        # Combine timeout + retry in one adapter so neither can be silently
+        # overridden by the other (retry_requests.retry remounts on the same session).
+        _build_session(cache_session, timeout=30)
+        self._client = openmeteo_requests.Client(session=cache_session)  # type: ignore[arg-type]
         # Keep a direct reference to the cache backend for targeted invalidation.
         self._cache_session = cache_session
         # Sidecar JSON file: {model_name: last_run_availability_time} (Unix ts)
