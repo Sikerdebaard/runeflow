@@ -12,13 +12,11 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import os
 import pickle
 from datetime import UTC
 from datetime import datetime as dt_cls
 
 import inject
-import joblib
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
@@ -44,6 +42,13 @@ MAX_UNCERTAINTY_FACTOR = 3.0
 
 # Mixed ensemble: 40 ICON-EU (hourly, 5 d) + 51 ECMWF IFS (3 h→1 h, 9 d)
 N_ENSEMBLE_MEMBERS = N_MIXED_ENSEMBLE_MEMBERS
+
+# Rows passed to pipeline.transform per step.  The longest price-based rolling
+# window in the feature pipeline is 168 h; longer commodity/generation windows
+# (720–2160 h) already produce NaN for the 16-day warmup and are imputed.
+# Using 200 rows covers all sub-168 h features exactly and halves the per-step
+# feature-engineering cost versus the full 384-row warmup.
+_FEATURE_LOOKBACK = 200
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +126,8 @@ def _run_forecast_worker(
             warmup_window = pd.concat([warmup_window, new_row])
             warmup_window = warmup_window.tail(INFERENCE_WARMUP_DAYS * 24).sort_index()
 
-        df_features = pipeline.transform(warmup_window, zone_cfg)
+        # Trim to lookback window before feature computation (see _FEATURE_LOOKBACK).
+        df_features = pipeline.transform(warmup_window.tail(_FEATURE_LOOKBACK), zone_cfg)
         if df_features.empty:
             continue
 
@@ -212,6 +218,143 @@ def _run_forecast_worker(
 
     logger.info("[%s] finished — %d results", label, len(results))
     return results
+
+
+def _run_ensemble_batched(
+    member_weather_dfs: list[pd.DataFrame],
+    warmup: pd.DataFrame,
+    timestamps: pd.DatetimeIndex,
+    xgb: XGBoostQuantileModel,
+    ext_high: ExtremeHighModel,
+    ext_low: ExtremeLowModel,
+    imputer: SimpleImputer,
+    features: list[str],
+    zone_cfg: ZoneConfig,
+) -> list[dict[pd.Timestamp, dict]]:
+    """
+    Batch-inference loop that processes ALL ensemble members together per timestep.
+
+    For each forecast hour:
+      1. Each member's feature row is computed from its own (diverged) warmup window,
+         using a trimmed _FEATURE_LOOKBACK-row window to halve feature-engineering cost.
+      2. All M feature rows are stacked into one (M × F) batch DataFrame.
+      3. XGBoost and extreme models are called ONCE for the whole batch instead
+         of M times — amortising tree-traversal and DMatrix overhead across members.
+      4. Each member's warmup window is updated with its own prediction so that
+         autoregressive price-lag features diverge correctly across the horizon.
+
+    Returns a list of per-member result dicts (same format as _run_forecast_worker).
+    """
+    n_members = len(member_weather_dfs)
+    if n_members == 0:
+        return []
+
+    pipeline = build_pipeline(zone_cfg)
+    ensemble_strategy = ConditionGatedStrategy()
+
+    # Per-member state
+    warmup_windows = []
+    weather_dfs_tz = []
+    for wdf in member_weather_dfs:
+        wdf_tz = wdf.copy()
+        if wdf_tz.index.tz is None:  # type: ignore[attr-defined]
+            wdf_tz.index = wdf_tz.index.tz_localize("UTC")  # type: ignore[attr-defined]
+        else:
+            wdf_tz.index = wdf_tz.index.tz_convert("UTC")  # type: ignore[attr-defined]
+        weather_dfs_tz.append(wdf_tz)
+        warmup_windows.append(warmup.copy())
+
+    all_results: list[dict[pd.Timestamp, dict]] = [{} for _ in range(n_members)]
+    n_total = len(timestamps)
+
+    for h, ts in enumerate(timestamps):
+        # ── Build one feature row per member ───────────────────────────────
+        X_rows: list[pd.DataFrame] = []
+        valid: list[int] = []
+
+        for m_idx in range(n_members):
+            ww = warmup_windows[m_idx]
+            already_known = ts in ww.index
+
+            if not already_known:
+                if ts not in weather_dfs_tz[m_idx].index:
+                    continue
+                new_row = weather_dfs_tz[m_idx].loc[[ts]]
+                ww = pd.concat([ww, new_row])
+                ww = ww.tail(INFERENCE_WARMUP_DAYS * 24).sort_index()
+                warmup_windows[m_idx] = ww
+
+            # Trim to lookback window: halves feature-engineering cost while
+            # keeping all features that need < _FEATURE_LOOKBACK rows exact.
+            ww_trim = ww.tail(_FEATURE_LOOKBACK)
+            df_feat = pipeline.transform(ww_trim, zone_cfg)
+            if df_feat.empty:
+                continue
+
+            df_feat = df_feat.sort_index()
+            X_row = df_feat.loc[[ts]] if ts in df_feat.index else df_feat.tail(1)
+            X_row = X_row.drop(columns=[TARGET_COLUMN], errors="ignore")
+
+            if features:
+                missing = {f: np.nan for f in features if f not in X_row.columns}
+                if missing:
+                    X_row = pd.concat([X_row, pd.DataFrame(missing, index=X_row.index)], axis=1)
+                X_row = X_row[features]
+
+            if X_row.isnull().any().any():
+                X_row = pd.DataFrame(
+                    imputer.transform(X_row), columns=X_row.columns, index=X_row.index
+                )
+
+            X_rows.append(X_row)
+            valid.append(m_idx)
+
+        if not X_rows:
+            continue
+
+        # ── Single batch predict for all valid members ──────────────────────
+        X_batch = pd.concat(X_rows, ignore_index=True)
+        uf = min(1.0 + h * BASE_UNCERTAINTY_GROWTH, MAX_UNCERTAINTY_FACTOR)
+
+        batch_xgb = xgb.predict(X_batch)
+        batch_ext_high = ext_high.predict(X_batch) if ext_high.is_trained else None
+        batch_ext_low = ext_low.predict(X_batch) if ext_low.is_trained else None
+
+        # ── Distribute predictions back to each member ─────────────────────
+        for batch_i, m_idx in enumerate(valid):
+            ww = warmup_windows[m_idx]
+            already_known = ts in warmup.index  # only original warmup rows are "known"
+
+            preds_map: dict[str, pd.DataFrame] = {
+                "xgboost_quantile": batch_xgb.iloc[[batch_i]].reset_index(drop=True)
+            }
+            if batch_ext_high is not None:
+                preds_map["extreme_high"] = batch_ext_high.iloc[[batch_i]].reset_index(drop=True)
+            if batch_ext_low is not None:
+                preds_map["extreme_low"] = batch_ext_low.iloc[[batch_i]].reset_index(drop=True)
+
+            combined = ensemble_strategy.combine(
+                preds_map, X_rows[batch_i], weather_uncertainty_factor=uf
+            )
+            point = combined.iloc[0]
+            prediction = float(point["prediction"])
+
+            all_results[m_idx][ts] = {"prediction": prediction}
+
+            # Autoregressive feed-forward
+            if not already_known:
+                warmup_windows[m_idx].at[ts, TARGET_COLUMN] = prediction
+
+        if (h + 1) % 24 == 0 or (h + 1) == n_total:
+            logger.info(
+                "[ensemble-batch] %d/%d hours complete (%d members active)",
+                h + 1,
+                n_total,
+                len(valid),
+            )
+
+    logger.info("[ensemble-batch] finished — %d members, %d results each", n_members, n_total)
+    return all_results
 
 
 class InferenceService:
@@ -335,7 +478,7 @@ class InferenceService:
         )
         logger.info("Deterministic forecast done (%d points)", len(det_results))
 
-        # Ensemble runs — one joblib worker per member (loky backend)
+        # Ensemble runs — batched across all members per timestep
         member_cap = N_ENSEMBLE_MEMBERS
         if ensemble_member_limit is not None:
             member_cap = max(0, int(ensemble_member_limit))
@@ -345,28 +488,22 @@ class InferenceService:
 
         if members_to_run:
             n_total = len(members_to_run)
-            n_workers = min(os.cpu_count() or 1, n_total)
             logger.info(
-                "Running %d ensemble members in parallel (workers=%d, backend=loky)",
+                "Running %d ensemble members batched per timestep",
                 n_total,
-                n_workers,
             )
-            raw_results = joblib.Parallel(n_jobs=n_workers, backend="loky", verbose=5)(
-                joblib.delayed(_run_forecast_worker)(
-                    member.df,
-                    warmup,
-                    timestamps,
-                    xgb,
-                    ext_high,
-                    ext_low,
-                    imputer,
-                    features,
-                    self._zone_cfg,
-                    f"member_{i:02d}",
-                )
-                for i, member in enumerate(members_to_run)
+            raw = _run_ensemble_batched(
+                [m.df for m in members_to_run],
+                warmup,
+                timestamps,
+                xgb,
+                ext_high,
+                ext_low,
+                imputer,
+                features,
+                self._zone_cfg,
             )
-            member_results = [r for r in raw_results if r is not None]
+            member_results = [r for r in raw if r]
             logger.info(
                 "Ensemble runs complete: %d/%d succeeded",
                 len(member_results),

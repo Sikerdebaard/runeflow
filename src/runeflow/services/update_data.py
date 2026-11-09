@@ -156,9 +156,37 @@ class UpdateDataService:
     def _update_generation(self, zone: str, years: list[int]) -> None:
         if self._generation_port is None:
             return
-        start = pd.Timestamp(f"{years[0]}-01-01", tz="UTC")
         end = pd.Timestamp(f"{years[-1]}-12-31 23:00:00", tz="UTC")
-        logger.info("Downloading generation data")
+
+        # Incremental: only download the missing tail rather than the full history.
+        existing = self._store.load_generation(zone)
+        if existing is not None and len(existing.df) > 0:
+            cached_last = existing.df.index[-1]
+            cached_last_utc = (
+                pd.Timestamp(cached_last).tz_convert("UTC")
+                if cached_last.tzinfo
+                else pd.Timestamp(cached_last, tz="UTC")
+            )
+            today_utc = pd.Timestamp.now("UTC").normalize()
+            if cached_last_utc >= today_utc - pd.Timedelta(days=3):
+                logger.info(
+                    "Generation data up-to-date for zone=%s (cached through %s), skipping",
+                    zone,
+                    cached_last_utc.date(),
+                )
+                return
+            # Re-download from one week before the cache end to catch any revisions.
+            start = (cached_last_utc - pd.Timedelta(days=7)).floor("D")
+            logger.info(
+                "Generation data cache ends at %s; downloading %s – %s",
+                cached_last_utc.date(),
+                start.date(),
+                end.date(),
+            )
+        else:
+            start = pd.Timestamp(f"{years[0]}-01-01", tz="UTC")
+            logger.info("Downloading generation data %s – %s", start.date(), end.date())
+
         series = self._generation_port.download_generation(zone, start, end)
         if series is not None:
             self._store.save_generation(series)
