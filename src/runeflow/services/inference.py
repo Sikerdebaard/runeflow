@@ -453,10 +453,10 @@ class InferenceService:
             def _download_ensemble() -> list:
                 return self._weather_port.download_ensemble_forecast(locations, horizon_days=9)
 
+            _ex = _cf.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(_download_ensemble)
             try:
-                with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                    _fut = _ex.submit(_download_ensemble)
-                    ens_members = _fut.result(timeout=_ENSEMBLE_TOTAL_TIMEOUT)
+                ens_members = _fut.result(timeout=_ENSEMBLE_TOTAL_TIMEOUT)
                 logger.info("Ensemble weather: %d members", len(ens_members))
             except _cf.TimeoutError:
                 logger.warning(
@@ -467,6 +467,8 @@ class InferenceService:
             except Exception as exc:
                 logger.warning("Ensemble weather forecast unavailable: %s", exc)
                 ens_members = []
+            finally:
+                _ex.shutdown(wait=False)  # abandon hung thread; don't block
 
         # Build forecast timestamps
         now_utc = pd.Timestamp.now("UTC").floor("h")
