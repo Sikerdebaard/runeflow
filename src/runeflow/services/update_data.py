@@ -144,13 +144,10 @@ class UpdateDataService:
         forecast = self._weather_port.download_forecast(locations, horizon_days=9)
         self._store.save_forecast_weather(forecast, zone)
 
-        # Ensemble (optional — best-effort)
-        try:
-            members = self._weather_port.download_ensemble_forecast(locations)
-            for i, wm in enumerate(members):
-                self._store.save_forecast_weather(wm, zone, member=i)
-        except Exception:
-            logger.debug("Ensemble weather forecast not available")
+        # Ensemble weather is intentionally NOT downloaded here.
+        # At ~60 MB per zone (91 members × 9 days × hourly), it times out silently
+        # and blocks the pipeline for hours.  InferenceService downloads and caches
+        # it at inference time when it is actually needed.
 
     # ------------------------------------------------------------------
     def _update_generation(self, zone: str, years: list[int]) -> None:
