@@ -443,11 +443,27 @@ class InferenceService:
         if deterministic_only:
             logger.info("Deterministic-only mode enabled; skipping ensemble weather download")
         else:
+            # Hard 2-minute cap: ensemble is ~60 MB; a slow server can hold the
+            # connection open indefinitely because the per-read socket timeout only
+            # fires between individual recv() calls, not over the total transfer.
+            import concurrent.futures as _cf
+
+            _ENSEMBLE_TOTAL_TIMEOUT = 120.0
+
+            def _download_ensemble() -> list:
+                return self._weather_port.download_ensemble_forecast(locations, horizon_days=9)
+
             try:
-                ens_members = self._weather_port.download_ensemble_forecast(
-                    locations, horizon_days=9
-                )
+                with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                    _fut = _ex.submit(_download_ensemble)
+                    ens_members = _fut.result(timeout=_ENSEMBLE_TOTAL_TIMEOUT)
                 logger.info("Ensemble weather: %d members", len(ens_members))
+            except _cf.TimeoutError:
+                logger.warning(
+                    "Ensemble weather download timed out after %.0fs — using deterministic only",
+                    _ENSEMBLE_TOTAL_TIMEOUT,
+                )
+                ens_members = []
             except Exception as exc:
                 logger.warning("Ensemble weather forecast unavailable: %s", exc)
                 ens_members = []
