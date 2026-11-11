@@ -85,10 +85,27 @@ IFS=',' read -ra ZONE_ARRAY <<< "$ZONES"
 
 echo "[$TIMESTAMP] ── Full run (update + train + inference) ── zones=${ZONES}" >> "$LOGFILE"
 
+# ---------------------------------------------------------------------------
+# Zone parallelism: set N_PARALLEL_ZONES > 1 to process multiple zones at once.
+# When > 1, the CPU budget is divided so training/inference don't oversubscribe.
+# Default 1 preserves the original behaviour.
+# ---------------------------------------------------------------------------
+N_PARALLEL_ZONES="${N_PARALLEL_ZONES:-1}"
+if [ "$N_PARALLEL_ZONES" -gt 1 ]; then
+    ZONE_THREADS=$(( $(nproc) / N_PARALLEL_ZONES ))
+    ZONE_THREADS=$(( ZONE_THREADS < 1 ? 1 : ZONE_THREADS ))
+    export OMP_NUM_THREADS=$ZONE_THREADS
+    export MKL_NUM_THREADS=$ZONE_THREADS
+    export OPENBLAS_NUM_THREADS=$ZONE_THREADS
+    export BLIS_NUM_THREADS=$ZONE_THREADS
+    echo "[$TIMESTAMP] Zone parallelism: N_PARALLEL_ZONES=${N_PARALLEL_ZONES}, threads/zone=${ZONE_THREADS}" >> "$LOGFILE"
+fi
+
+ZONE_STATUS_DIR=$(mktemp -d)
 FAILED_ZONES=()
 
-for ZONE in "${ZONE_ARRAY[@]}"; do
-    ZONE=$(echo "$ZONE" | xargs)  # trim whitespace
+_process_zone() {
+local ZONE="$1"
     TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     ZONE_LOGFILE="/var/log/runeflow/zone_${ZONE}.log"
     echo "[$TIMESTAMP] ── Zone: $ZONE ──" | tee -a "$ZONE_LOGFILE" >> "$LOGFILE"
@@ -97,16 +114,16 @@ for ZONE in "${ZONE_ARRAY[@]}"; do
     runeflow update-data --zone "$ZONE" >> "$LOGFILE" 2>&1 || {
         TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
         echo "[$TIMESTAMP] ERROR: [$ZONE] Data update failed — skipping zone." | tee -a "$ZONE_LOGFILE" >> "$LOGFILE"
-        FAILED_ZONES+=("$ZONE")
-        continue
+        echo "$ZONE" >> "$ZONE_STATUS_DIR/failed"
+        return 1
     }
 
     echo "[$TIMESTAMP] [$ZONE] Training model..." | tee -a "$ZONE_LOGFILE" >> "$LOGFILE"
     runeflow train --zone "$ZONE" >> "$LOGFILE" 2>&1 || {
         TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
         echo "[$TIMESTAMP] ERROR: [$ZONE] Training failed" | tee -a "$ZONE_LOGFILE" >> "$LOGFILE"
-        FAILED_ZONES+=("$ZONE")
-        continue
+        echo "$ZONE" >> "$ZONE_STATUS_DIR/failed"
+        return 1
     }
 
     echo "[$TIMESTAMP] [$ZONE] Warming up cache..." | tee -a "$ZONE_LOGFILE" >> "$LOGFILE"
@@ -117,8 +134,8 @@ for ZONE in "${ZONE_ARRAY[@]}"; do
     runeflow inference --zone "$ZONE" >> "$LOGFILE" 2>&1 || {
         TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
         echo "[$TIMESTAMP] ERROR: [$ZONE] Inference failed" | tee -a "$ZONE_LOGFILE" >> "$LOGFILE"
-        FAILED_ZONES+=("$ZONE")
-        continue
+        echo "$ZONE" >> "$ZONE_STATUS_DIR/failed"
+        return 1
     }
 
     OUTPUT_FILE="${OUTPUT_DIR}/tariffs_${ZONE}.json"
@@ -170,7 +187,33 @@ PYTHON
 
     TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
     echo "[$TIMESTAMP] [$ZONE] ✓ Zone complete." | tee -a "$ZONE_LOGFILE" >> "$LOGFILE"
+}  # end _process_zone
+
+# ---------------------------------------------------------------------------
+# Main zone dispatch — serial or parallel depending on N_PARALLEL_ZONES
+# ---------------------------------------------------------------------------
+for ZONE in "${ZONE_ARRAY[@]}"; do
+    ZONE=$(echo "$ZONE" | xargs)
+    if [ "$N_PARALLEL_ZONES" -le 1 ]; then
+        _process_zone "$ZONE"
+        # Collect failures written by the serial call
+        if [ -f "$ZONE_STATUS_DIR/failed" ]; then
+            while IFS= read -r z; do FAILED_ZONES+=("$z"); done < "$ZONE_STATUS_DIR/failed"
+            rm -f "$ZONE_STATUS_DIR/failed"
+        fi
+    else
+        # Parallel: cap concurrent background jobs
+        while [ "$(jobs -r | wc -l)" -ge "$N_PARALLEL_ZONES" ]; do sleep 1; done
+        _process_zone "$ZONE" &
+    fi
 done
+wait  # finish any background jobs
+
+# Collect failures from parallel runs
+if [ -f "$ZONE_STATUS_DIR/failed" ]; then
+    while IFS= read -r z; do FAILED_ZONES+=("$z"); done < "$ZONE_STATUS_DIR/failed"
+fi
+rm -rf "$ZONE_STATUS_DIR"
 
 # Build static dashboard for ALL zones (single call, renders cross-zone index)
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
